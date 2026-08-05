@@ -48,6 +48,23 @@ DO $migration$
 DECLARE
     object_kind "char";
 BEGIN
+    -- Objek EDA tahap 11-13 bergantung pada failure/timeline cache. Hapus
+    -- terlebih dahulu agar pipeline lengkap tetap idempotent saat dijalankan ulang.
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_failure_readiness_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_failure_rate_by_year';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_feature_missingness';
+    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.item_observation_30d';
+    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.item_installation_cycle';
+
+    -- Objek tahap semantic/timeline bergantung pada cache di file ini. Hapus
+    -- lebih dahulu agar pipeline 01-10 aman dijalankan ulang.
+    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.failure_event_flow';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.failure_event_flow_live';
+    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.item_journey_operational_timeline';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.item_journey_operational_timeline_live';
+    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.item_journey_semantic';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.item_journey_semantic_live';
+
     SELECT c.relkind
     INTO object_kind
     FROM pg_catalog.pg_class c
@@ -108,6 +125,8 @@ SELECT
     wo_code_clean,
     activity_clean,
     status_clean,
+    done_by_clean,
+    remark,
     created_on
 FROM analytics.item_journey_clean;
 

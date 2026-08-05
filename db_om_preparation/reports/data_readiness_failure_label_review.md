@@ -98,6 +98,21 @@ digunakan sebagai fitur sampai nilai yang tidak cocok master ditangani.
 Status repair setelah failure onset dipakai sebagai konfirmasi outcome, bukan
 titik awal kerusakan.
 
+## Klarifikasi relokasi, RECON, dan perubahan struktur historis
+
+- `DISMANTLED + DISMANTLE` berarti relokasi part, bukan kerusakan.
+- `DISMANTLED + CORRECTIVE` berarti part dilepas untuk perbaikan. Flow yang
+  diharapkan berikutnya adalah RETURN.
+- `DISMANTLED + RECON` merupakan rekonsiliasi administratif historis. Tanggalnya
+  dapat berupa dummy atau waktu input, bukan waktu kejadian sebenarnya.
+- Data dimulai sejak 2013 dan memiliki perubahan penamaan/struktur. Repair detail
+  tanpa work type baru tersedia secara konsisten sejak 2025.
+
+Semua RECON tetap disimpan untuk audit dan informasi lokasi, tetapi dikeluarkan
+dari perhitungan waktu pada `analytics.item_journey_operational_timeline`.
+Failure flow tersedia melalui `analytics.failure_event_flow`; missing RETURN
+ditandai `OPEN_OR_INCOMPLETE_FLOW`, bukan dianggap non-failure.
+
 ## Langkah setelah konfirmasi
 
 1. Membuat spesifikasi label final dan view kandidat event.

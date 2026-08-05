@@ -35,8 +35,17 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `sql/07_mtbf_clean.sql` | Membersihkan MTBF sebagai sumber suplementer, mempertahankan menit, dan menambah konversi jam | `analytics.mtbf_clean` |
 | `sql/08_data_quality_summary.sql` | Menyatukan quality check dan daftar validasi status | Cache `analytics.data_quality_summary`, `analytics.status_validation` |
 | `sql/09_failure_event_label.sql` | Menambahkan label failure onset berdasarkan keputusan bisnis | `analytics.item_journey_failure_labeled`, cache `analytics.failure_event_clean` |
+| `sql/10_operational_timeline.sql` | Memisahkan event operasional dari RECON administratif dan mengonfirmasi flow failure | `analytics.item_journey_semantic`, `analytics.item_journey_operational_timeline`, `analytics.failure_event_flow` |
+| `sql/11_item_installation_cycle.sql` | Membentuk siklus dari INSTALLED tepercaya sampai failure/reinstall/censoring | `analytics.item_installation_cycle` |
+| `sql/12_item_observation_dataset.sql` | Membentuk snapshot 30-harian, fitur historis, target 30 hari, dan flag observability | `analytics.item_observation_30d` |
+| `sql/13_eda_summary.sql` | Membuat metrik readiness, tren target, missingness, dan refresh dependency | Tiga view ringkasan EDA |
+| `notebooks/01_failure_eda.ipynb` | EDA interaktif tanpa memuat seluruh dataset detail ke memori | Tabel, grafik, pemeriksaan leakage, dan usulan time split |
+| `src/export_eda_report.py` | Menjalankan notebook dan mengekspor HTML | `reports/failure_eda.html` |
 | `src/run_pipeline.py` | Menjalankan semua SQL secara urut dan transactional per file | Seluruh view analytics tersedia |
 | `src/export_quality_report.py` | Mengekspor profiling dan quality summary | Dua CSV di folder `reports` |
+
+Kesimpulan kesiapan, kejanggalan, risiko timeline, dan pekerjaan yang masih
+diperlukan tersedia di `reports/data_readiness_conclusion.md`.
 
 Nilai `*_original` dipertahankan pada clean views agar setiap normalisasi dapat
 ditelusuri. Record yang gagal validasi tidak dihapus.
@@ -72,7 +81,7 @@ digunakan lebih baru daripada backup ini.
 1. Hubungkan DBeaver ke database `OMEXP` yang sudah ada. Jangan membuat database
    baru.
 2. Buka SQL Editor pada koneksi tersebut.
-3. Jalankan file di folder `sql` dari `01` sampai `09`, satu per satu.
+3. Jalankan file di folder `sql` dari `01` sampai `13`, satu per satu.
 4. Aktifkan **Stop on error**. Jika satu file gagal, hentikan urutan dan periksa
    pesan nama tabel/kolom sebelum melanjutkan.
 5. Setelah file `02`, query `analytics.data_profile` untuk melihat profil data.
@@ -100,6 +109,13 @@ Isi `.env` dengan kredensial database `OMEXP` yang sudah ada, lalu jalankan:
 ```powershell
 python src\run_pipeline.py
 python src\export_quality_report.py
+jupyter lab notebooks\01_failure_eda.ipynb
+```
+
+Untuk mengeksekusi notebook secara otomatis dan membuat HTML:
+
+```powershell
+python src\export_eda_report.py
 ```
 
 `run_pipeline.py` memperbarui clean view sekaligus membangun cache untuk tiga
@@ -113,15 +129,98 @@ Setelah tabel sumber menerima data baru, perbarui seluruh cache dengan:
 CALL analytics.refresh_cached_views();
 ```
 
-Clean view tetap membaca data sumber terbaru secara langsung. Cache yang perlu
-di-refresh adalah `data_profile`, `item_journey_transition_profile`,
-`data_quality_summary`, dan `failure_event_clean`; rumus dan quality check-nya
-sama dengan versi live.
+Clean view tetap membaca data sumber terbaru secara langsung. Cache profiling,
+quality, event, semantic, operational timeline, dan failure-flow diperbarui
+sekaligus oleh procedure `analytics.refresh_cached_views()`.
 
 Label failure onset yang sudah dikonfirmasi adalah kombinasi
 `status_clean = 'DISMANTLED'` dan `wo_type_clean = 'CORRECTIVE'`. `RECON`
 ditandai sebagai kegiatan terencana/non-failure. Cohort model pertama dibatasi
 ke `PART` dengan tanggal valid dan model yang konsisten.
+
+## Konteks bisnis journey dan perubahan pencatatan
+
+Data journey tersedia sejak 2013. Penamaan status dan kelengkapan flow berbeda
+antarperiode, sehingga analisis membedakan dua era:
+
+- `LEGACY_2013_2024`: flow repair detail belum tersedia secara konsisten;
+- `DETAILED_REPAIR_2025_PLUS`: status repair detail mulai dicatat.
+
+| Status | Work type | Arti bisnis | Perlakuan analisis |
+|---|---|---|---|
+| `DISMANTLED` | `CORRECTIVE` | Part dilepas karena gangguan/perbaikan | Failure onset |
+| `DISMANTLED` | `DISMANTLE` | Part dipindah/relokasi | Non-failure; lokasi tetap informatif |
+| `DISMANTLED` | `RECON` | Rekonsiliasi administratif data lama | Non-failure; waktu tidak dipercaya |
+| `RETURNED` | umumnya kosong | Part dikembalikan setelah dilepas | Konfirmasi flow, bukan onset |
+| `NEED REPAIR`, `REPAIRING` | kosong | Proses repair detail sejak 2025 | Konfirmasi outcome |
+| `UNREPAIRABLE`, `BROKEN` | kosong | Tidak dapat diperbaiki/rusak | Failure outcome |
+
+Status `SENDREP`, `RECEIVE`, `CHECKING`, `NEED REPAIR`, `REPAIRING`, `HOLD`,
+`WAITING`, dan `UNREPAIRABLE` memang tidak memiliki `wo_type`. Hal ini merupakan
+karakter flow item sejak 2025 dan bukan otomatis data error.
+
+### Perlakuan khusus RECON
+
+RECON pada data lama digunakan sebagai formalitas untuk mencatat bahwa part yang
+sebelumnya tercatat di lokasi A ternyata sudah berada di lokasi B. Timestamp-nya
+dapat berupa tanggal dummy atau waktu input rekonsiliasi, bukan waktu perpindahan
+yang sebenarnya. Karena itu:
+
+- event RECON tetap disimpan pada audit/clean layer;
+- RECON tidak dianggap failure;
+- timestamp RECON tidak dipakai menghitung umur, gap, MTBF, atau durasi event;
+- RECON tidak menjadi previous/next event pada operational timeline;
+- lokasi RECON boleh dipertahankan sebagai informasi posisi, tetapi waktu
+  perpindahannya tidak dianggap terpercaya;
+- installation yang terhubung ke work order RECON juga dikeluarkan dari waktu
+  operasional walaupun `wo_type` journey tertulis `INSTALLATION`;
+- installation lama dengan `done_by` atau `remark` berisi `RECON` juga dianggap
+  administratif walaupun `wo_type` dan work order kosong.
+
+Tersedia dua timeline:
+
+```text
+analytics.item_journey_clean
+    Audit timeline: semua event termasuk RECON
+
+analytics.item_journey_operational_timeline
+    Operational timeline: RECON dan waktu invalid/future tidak memengaruhi
+    urutan maupun durasi
+```
+
+`analytics.item_journey_semantic` mengelompokkan event menjadi:
+
+```text
+FAILURE_ONSET, RELOCATION, ADMIN_RECON, REPAIR_PROCESS,
+FAILURE_OUTCOME, REPAIR_COMPLETED, RETURN_FLOW,
+PREVENTIVE, NORMAL_OPERATION
+```
+
+`analytics.failure_event_flow` memeriksa flow setelah failure onset. RETURN
+merupakan flow yang diharapkan, tetapi ketiadaan RETURN tidak mengubah event
+menjadi non-failure. Flow tanpa konfirmasi diberi status
+`OPEN_OR_INCOMPLETE_FLOW`, yang dapat berarti pencatatan belum lengkap atau
+proses masih berjalan dan tidak boleh dianggap kelas negatif.
+
+## Dataset EDA failure 30 hari
+
+`analytics.item_installation_cycle` hanya dimulai oleh `INSTALLED` pada
+operational timeline. Installation RECON tidak membuka cycle. Cycle berakhir
+pada failure pertama, installation tepercaya berikutnya, atau batas data.
+Cycle tanpa akhir yang teramati ditandai sebagai right-censored; cycle dengan
+timestamp sama/berdurasi nol ditandai tidak valid dan tidak masuk cohort awal.
+
+`analytics.item_observation_30d` memakai snapshot setiap 30 hari. Target bernilai
+positif hanya jika failure terjadi setelah snapshot dan dalam 30 hari. Negatif
+hanya layak training jika tersedia follow-up penuh 30 hari; snapshot dekat batas
+data atau akhir cycle diberi `EXCLUDED_INCOMPLETE_30D_FOLLOWUP`. Seluruh fitur
+dihitung hanya dari event pada atau sebelum waktu observasi untuk mencegah data
+leakage. Dataset pertama dibatasi ke `PART` yang identifier/model-nya konsisten.
+
+Notebook membandingkan era lama dan era detail repair, target imbalance,
+missingness, umur sampai failure, model dengan dukungan sampel minimum, fitur
+failure/nonfailure, dan split waktu. Rekomendasi awal split adalah train sampai
+2024, validation 2025, dan test 2026; keputusan final tetap mengikuti hasil EDA.
 
 Runner hanya menerima `DB_NAME=OMEXP`. Runner juga menolak DDL database serta
 SQL yang berisi `UPDATE`, `DELETE`, `INSERT`, `TRUNCATE`,
@@ -158,6 +257,16 @@ FROM analytics.item_journey_clean
 WHERE is_work_type_consistent IS FALSE
 GROUP BY journey_work_type_name_clean, work_order_work_type_name_clean
 ORDER BY row_count DESC;
+
+SELECT event_semantic, COUNT(*) AS event_count
+FROM analytics.item_journey_semantic
+GROUP BY event_semantic
+ORDER BY event_count DESC;
+
+SELECT data_era, flow_confirmation_status, COUNT(*) AS failure_count
+FROM analytics.failure_event_flow
+GROUP BY data_era, flow_confirmation_status
+ORDER BY data_era, failure_count DESC;
 
 SELECT *
 FROM analytics.status_validation

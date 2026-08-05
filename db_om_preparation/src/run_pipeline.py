@@ -19,6 +19,10 @@ SQL_FILES = [
     "07_mtbf_clean.sql",
     "08_data_quality_summary.sql",
     "09_failure_event_label.sql",
+    "10_operational_timeline.sql",
+    "11_item_installation_cycle.sql",
+    "12_item_observation_dataset.sql",
+    "13_eda_summary.sql",
 ]
 
 # Guard tambahan: file pipeline tidak boleh menulis ke tiga schema sumber.
@@ -63,8 +67,8 @@ def main() -> int:
                 print(f"[OK ] {filename}")
 
             print(
-                "\nPipeline selesai. Clean view dan cache analytics sudah siap. "
-                "Jalankan export_quality_report.py untuk mengekspor laporan."
+                "\nPipeline selesai. Clean view, cache analytics, dan dataset EDA "
+                "sudah siap. Buka notebooks/01_failure_eda.ipynb untuk EDA."
             )
         return 0
     except Exception as exc:
