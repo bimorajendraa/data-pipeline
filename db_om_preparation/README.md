@@ -34,6 +34,7 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `sql/06_work_order_history_clean.sql` | Membersihkan history, memeriksa orphan WO dan urutan tanggal | `analytics.work_order_history_clean` |
 | `sql/07_mtbf_clean.sql` | Membersihkan MTBF sebagai sumber suplementer, mempertahankan menit, dan menambah konversi jam | `analytics.mtbf_clean` |
 | `sql/08_data_quality_summary.sql` | Menyatukan quality check dan daftar validasi status | Cache `analytics.data_quality_summary`, `analytics.status_validation` |
+| `sql/09_failure_event_label.sql` | Menambahkan label failure onset berdasarkan keputusan bisnis | `analytics.item_journey_failure_labeled`, cache `analytics.failure_event_clean` |
 | `src/run_pipeline.py` | Menjalankan semua SQL secara urut dan transactional per file | Seluruh view analytics tersedia |
 | `src/export_quality_report.py` | Mengekspor profiling dan quality summary | Dua CSV di folder `reports` |
 
@@ -71,7 +72,7 @@ digunakan lebih baru daripada backup ini.
 1. Hubungkan DBeaver ke database `OMEXP` yang sudah ada. Jangan membuat database
    baru.
 2. Buka SQL Editor pada koneksi tersebut.
-3. Jalankan file di folder `sql` dari `01` sampai `08`, satu per satu.
+3. Jalankan file di folder `sql` dari `01` sampai `09`, satu per satu.
 4. Aktifkan **Stop on error**. Jika satu file gagal, hentikan urutan dan periksa
    pesan nama tabel/kolom sebelum melanjutkan.
 5. Setelah file `02`, query `analytics.data_profile` untuk melihat profil data.
@@ -113,8 +114,14 @@ CALL analytics.refresh_cached_views();
 ```
 
 Clean view tetap membaca data sumber terbaru secara langsung. Cache yang perlu
-di-refresh adalah `data_profile`, `item_journey_transition_profile`, dan
-`data_quality_summary`; rumus dan quality check-nya sama dengan versi live.
+di-refresh adalah `data_profile`, `item_journey_transition_profile`,
+`data_quality_summary`, dan `failure_event_clean`; rumus dan quality check-nya
+sama dengan versi live.
+
+Label failure onset yang sudah dikonfirmasi adalah kombinasi
+`status_clean = 'DISMANTLED'` dan `wo_type_clean = 'CORRECTIVE'`. `RECON`
+ditandai sebagai kegiatan terencana/non-failure. Cohort model pertama dibatasi
+ke `PART` dengan tanggal valid dan model yang konsisten.
 
 Runner hanya menerima `DB_NAME=OMEXP`. Runner juga menolak DDL database serta
 SQL yang berisi `UPDATE`, `DELETE`, `INSERT`, `TRUNCATE`,

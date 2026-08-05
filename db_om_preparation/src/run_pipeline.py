@@ -18,6 +18,7 @@ SQL_FILES = [
     "06_work_order_history_clean.sql",
     "07_mtbf_clean.sql",
     "08_data_quality_summary.sql",
+    "09_failure_event_label.sql",
 ]
 
 # Guard tambahan: file pipeline tidak boleh menulis ke tiga schema sumber.
