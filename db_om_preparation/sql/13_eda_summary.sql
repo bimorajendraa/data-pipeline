@@ -31,11 +31,11 @@ BEGIN
     REFRESH MATERIALIZED VIEW analytics.data_profile;
     REFRESH MATERIALIZED VIEW analytics.item_journey_event_cache;
     REFRESH MATERIALIZED VIEW analytics.item_identifier_model_cache;
+    REFRESH MATERIALIZED VIEW analytics.failure_event_clean;
     REFRESH MATERIALIZED VIEW analytics.item_journey_semantic;
     REFRESH MATERIALIZED VIEW analytics.item_journey_operational_timeline;
     REFRESH MATERIALIZED VIEW analytics.item_journey_transition_profile;
     REFRESH MATERIALIZED VIEW analytics.data_quality_summary;
-    REFRESH MATERIALIZED VIEW analytics.failure_event_clean;
     REFRESH MATERIALIZED VIEW analytics.failure_event_flow;
     REFRESH MATERIALIZED VIEW analytics.item_installation_cycle;
     REFRESH MATERIALIZED VIEW analytics.item_observation_30d;

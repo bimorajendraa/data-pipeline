@@ -43,11 +43,12 @@ Dasar pemilihan:
 
 - Tersedia sejak 2013 sampai 2026, sehingga cakupannya lebih panjang daripada
   status repair detail.
-- Terdapat 6.714 kejadian pada 4.152 item.
+- Terdapat 6.715 kejadian pada 4.153 item setelah satu preventive dismantle
+  dikonfirmasi `UNREPAIRABLE` sebelum installation berikutnya.
 - Sebanyak 5.986 kejadian langsung didahului status `INSTALLED`.
 - Median waktu dari event sebelumnya untuk jalur `INSTALLED -> DISMANTLED
   (CORRECTIVE)` sekitar 344,82 hari.
-- Pada kategori PART, 4.123 dari 23.564 item (17,50%) pernah mengalami kandidat
+- Pada kategori PART, 4.124 dari 23.564 item (17,50%) pernah mengalami kandidat
   kejadian ini.
 - Pada kategori TERMINAL, hanya 29 dari 2.833 item (1,02%) yang mengalaminya.
 
@@ -94,6 +95,10 @@ digunakan sebagai fitur sampai nilai yang tidak cocok master ditangani.
 2. Work order corrective dapat memiliki aktivitas lain, tetapi kombinasi dengan
    dismantle tetap menjadi onset yang terkonfirmasi.
 3. `RECON` merupakan kegiatan terencana dan menjadi konteks non-failure.
+4. `DISMANTLED + PREVENTIVE` tetap non-failure kecuali sebelum installation
+   berikutnya terdapat `BROKEN`, `SENDLOG (BROKEN)`, atau `UNREPAIRABLE`. Pada
+   kondisi tersebut tanggal dismantle menjadi failure onset dan tanggal outcome
+   disimpan sebagai konfirmasi.
 
 Status repair setelah failure onset dipakai sebagai konfirmasi outcome, bukan
 titik awal kerusakan.

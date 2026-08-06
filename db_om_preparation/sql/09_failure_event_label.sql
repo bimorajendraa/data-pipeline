@@ -1,46 +1,6 @@
 -- Label event kerusakan yang sudah dikonfirmasi secara bisnis.
 -- Clean view sumber tidak diubah; view ini hanya menambahkan interpretasi label.
-CREATE OR REPLACE VIEW analytics.item_journey_failure_labeled AS
-SELECT
-    j.*,
-    (
-        j.status_clean = 'DISMANTLED'
-        AND j.wo_type_clean = 'CORRECTIVE'
-    ) AS is_failure_onset,
-    (
-        j.wo_type_clean = 'RECON'
-        OR j.journey_work_type_name_clean = 'RECON'
-        OR j.work_order_work_type_name_clean = 'RECON'
-    ) AS is_planned_recon_context,
-    (
-        j.item_category_clean = 'PART'
-        AND j.is_valid_date
-        AND NOT j.is_future_date
-        AND j.is_item_found
-        AND j.is_item_model_consistent
-    ) AS is_initial_model_cohort,
-    CASE
-        WHEN j.item_category_clean IS DISTINCT FROM 'PART'
-            THEN 'EXCLUDED_NON_PART'
-        WHEN NOT j.is_valid_date OR j.is_future_date
-            THEN 'EXCLUDED_INVALID_EVENT_DATE'
-        WHEN NOT j.is_item_found
-            THEN 'EXCLUDED_ITEM_NOT_FOUND'
-        WHEN j.is_item_model_consistent IS NOT TRUE
-            THEN 'EXCLUDED_MODEL_INCONSISTENT'
-        ELSE 'ELIGIBLE'
-    END AS model_cohort_status,
-    CASE
-        WHEN j.status_clean = 'DISMANTLED'
-         AND j.wo_type_clean = 'CORRECTIVE'
-            THEN 'CONFIRMED_CORRECTIVE_DISMANTLE'
-        WHEN j.wo_type_clean = 'RECON'
-          OR j.journey_work_type_name_clean = 'RECON'
-          OR j.work_order_work_type_name_clean = 'RECON'
-            THEN 'PLANNED_RECON_NON_FAILURE'
-        ELSE NULL
-    END AS event_label_basis
-FROM analytics.item_journey_clean j;
+DROP VIEW IF EXISTS analytics.item_journey_failure_labeled;
 
 -- Hapus cache versi sebelumnya secara berurutan karena failure_event_clean
 -- bergantung pada live view dan event cache.
@@ -48,6 +8,13 @@ DO $migration$
 DECLARE
     object_kind "char";
 BEGIN
+    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.eda_snapshot_cadence_comparison';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_outlier_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_failure_unit_comparison';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_incomplete_failure_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_incomplete_failure_detail';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.failure_outcome_missing_onset_review';
+
     -- Objek EDA tahap 11-13 bergantung pada failure/timeline cache. Hapus
     -- terlebih dahulu agar pipeline lengkap tetap idempotent saat dijalankan ulang.
     EXECUTE 'DROP VIEW IF EXISTS analytics.eda_failure_readiness_summary';
@@ -121,6 +88,11 @@ SELECT
     item_identifier_clean,
     client_clean,
     place_clean,
+    place_master_code_clean,
+    place_master_name_clean,
+    place_canonical_clean,
+    is_place_found,
+    is_place_mapping_ambiguous,
     wo_type_clean,
     wo_code_clean,
     activity_clean,
@@ -179,12 +151,61 @@ CREATE UNIQUE INDEX item_identifier_model_lookup_idx
     ON analytics.item_identifier_model_cache (lookup_type, identifier_clean);
 
 -- Inventory lookup mempertahankan aturan identifier/model dari clean view.
+-- Selain corrective dismantle, preventive dismantle menjadi failure bila
+-- kemudian dikonfirmasi BROKEN/UNREPAIRABLE sebelum installation berikutnya.
 CREATE OR REPLACE VIEW analytics.failure_event_clean_live AS
-WITH failure_event AS (
+WITH candidate_onset AS (
     SELECT *
     FROM analytics.item_journey_event_cache
     WHERE status_clean = 'DISMANTLED'
-      AND wo_type_clean = 'CORRECTIVE'
+      AND wo_type_clean IN ('CORRECTIVE', 'PREVENTIVE')
+),
+failure_event AS (
+    SELECT
+        c.*,
+        CASE
+            WHEN c.wo_type_clean = 'CORRECTIVE' THEN c.created_on
+            ELSE outcome.created_on
+        END AS failure_confirmed_on,
+        CASE
+            WHEN c.wo_type_clean = 'CORRECTIVE' THEN c.status_clean
+            ELSE outcome.status_clean
+        END AS failure_confirmation_status,
+        CASE
+            WHEN c.wo_type_clean = 'CORRECTIVE'
+                THEN 'CONFIRMED_CORRECTIVE_DISMANTLE'
+            ELSE 'CONFIRMED_FAILURE_OUTCOME_AFTER_PREVENTIVE'
+        END AS event_label_basis
+    FROM candidate_onset c
+    LEFT JOIN LATERAL (
+        SELECT o.created_on, o.status_clean
+        FROM analytics.item_journey_event_cache o
+        WHERE c.wo_type_clean = 'PREVENTIVE'
+          AND o.item_identifier_clean = c.item_identifier_clean
+          AND o.status_clean IN ('UNREPAIRABLE', 'BROKEN', 'SENDLOG (BROKEN)')
+          AND (
+              o.created_on > c.created_on
+              OR (o.created_on = c.created_on AND o.journey_id > c.journey_id)
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM analytics.item_journey_event_cache n
+              WHERE n.item_identifier_clean = c.item_identifier_clean
+                AND n.status_clean = 'INSTALLED'
+                AND (
+                    n.created_on > c.created_on
+                    OR (n.created_on = c.created_on AND n.journey_id > c.journey_id)
+                )
+                AND (
+                    n.created_on < o.created_on
+                    OR (n.created_on = o.created_on AND n.journey_id < o.journey_id)
+                )
+          )
+        ORDER BY o.created_on, o.journey_id
+        LIMIT 1
+    ) outcome ON TRUE
+    WHERE c.wo_type_clean = 'CORRECTIVE'
+       OR outcome.created_on IS NOT NULL
 ),
 validated AS (
     SELECT
@@ -254,8 +275,16 @@ SELECT
     host_serial_code_clean,
     client_clean,
     place_clean,
+    place_master_code_clean,
+    place_master_name_clean,
+    place_canonical_clean AS failure_place_clean,
+    is_place_found AS is_failure_place_found,
+    is_place_mapping_ambiguous AS is_failure_place_mapping_ambiguous,
     created_on AS failure_onset_on,
     created_on::date AS failure_onset_date,
+    failure_confirmed_on,
+    failure_confirmed_on::date AS failure_confirmed_date,
+    failure_confirmation_status,
     previous_status_clean,
     previous_activity_clean,
     previous_created_on,
@@ -265,6 +294,8 @@ SELECT
     wo_code_clean,
     activity_clean,
     status_clean,
+    place_canonical_clean IS NOT NULL
+        AND NOT is_place_mapping_ambiguous AS is_location_feature_eligible,
     (
         item_category_clean = 'PART'
         AND created_on IS NOT NULL
@@ -286,7 +317,7 @@ SELECT
             THEN 'EXCLUDED_MODEL_INCONSISTENT'
         ELSE 'ELIGIBLE'
     END AS model_cohort_status,
-    'CONFIRMED_CORRECTIVE_DISMANTLE'::text AS event_label_basis
+    event_label_basis
 FROM validated;
 
 CREATE MATERIALIZED VIEW analytics.failure_event_clean AS
@@ -300,6 +331,46 @@ CREATE INDEX failure_event_model_date_idx
 
 CREATE INDEX failure_event_cohort_idx
     ON analytics.failure_event_clean (is_initial_model_cohort, failure_onset_on);
+
+-- Sinkronkan view label event dengan dua dasar failure yang sudah tervalidasi.
+CREATE OR REPLACE VIEW analytics.item_journey_failure_labeled AS
+SELECT
+    j.*,
+    f.journey_id IS NOT NULL AS is_failure_onset,
+    (
+        j.wo_type_clean = 'RECON'
+        OR j.journey_work_type_name_clean = 'RECON'
+        OR j.work_order_work_type_name_clean = 'RECON'
+    ) AS is_planned_recon_context,
+    (
+        j.item_category_clean = 'PART'
+        AND j.is_valid_date
+        AND NOT j.is_future_date
+        AND j.is_item_found
+        AND j.is_item_model_consistent
+    ) AS is_initial_model_cohort,
+    CASE
+        WHEN j.item_category_clean IS DISTINCT FROM 'PART'
+            THEN 'EXCLUDED_NON_PART'
+        WHEN NOT j.is_valid_date OR j.is_future_date
+            THEN 'EXCLUDED_INVALID_EVENT_DATE'
+        WHEN NOT j.is_item_found
+            THEN 'EXCLUDED_ITEM_NOT_FOUND'
+        WHEN j.is_item_model_consistent IS NOT TRUE
+            THEN 'EXCLUDED_MODEL_INCONSISTENT'
+        ELSE 'ELIGIBLE'
+    END AS model_cohort_status,
+    CASE
+        WHEN f.journey_id IS NOT NULL THEN f.event_label_basis
+        WHEN j.wo_type_clean = 'RECON'
+          OR j.journey_work_type_name_clean = 'RECON'
+          OR j.work_order_work_type_name_clean = 'RECON'
+            THEN 'PLANNED_RECON_NON_FAILURE'
+        ELSE NULL
+    END AS event_label_basis
+FROM analytics.item_journey_clean j
+LEFT JOIN analytics.failure_event_clean f
+    ON f.journey_id = j.journey_id;
 
 -- Perbarui entry point refresh agar cache event dibangun sebelum cache label.
 CREATE OR REPLACE PROCEDURE analytics.refresh_cached_views()

@@ -14,8 +14,9 @@ Data sumber -> profiling -> cleaning -> standardisasi -> transformasi
             -> validasi master -> view live -> cache laporan -> EDA/Grafana
 ```
 
-Tidak ada feature engineering prediktif, training model, n8n, Airflow, Kafka,
-Spark, dbt, data warehouse, atau perhitungan ulang MTBF di tahap ini.
+Pipeline sudah menyiapkan fitur historis sederhana untuk EDA, tetapi belum
+melatih model. Tidak ada n8n, Airflow, Kafka, Spark, dbt, data warehouse, atau
+perhitungan ulang MTBF di tahap ini.
 
 Sumber utama flow adalah `journal.t_item_journey`. Work order hanya menjadi
 validasi/pelengkap bila `wo_code` tersedia. MTBF dipertahankan sebagai data
@@ -39,6 +40,8 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `sql/11_item_installation_cycle.sql` | Membentuk siklus dari INSTALLED tepercaya sampai failure/reinstall/censoring | `analytics.item_installation_cycle` |
 | `sql/12_item_observation_dataset.sql` | Membentuk snapshot 30-harian, fitur historis, target 30 hari, dan flag observability | `analytics.item_observation_30d` |
 | `sql/13_eda_summary.sql` | Membuat metrik readiness, tren target, missingness, dan refresh dependency | Tiga view ringkasan EDA |
+| `sql/14_extended_eda.sql` | Membandingkan cadence dan unit analisis, mengelompokkan follow-up yang belum lengkap, serta merangkum outlier | View pemeriksaan EDA lanjutan dan cache perbandingan snapshot |
+| `sql/15_comprehensive_eda.sql` | Melengkapi audit kualitas journal, univariat, hubungan item-lokasi/waktu, lifecycle satu lokasi, dan lonjakan aktivitas | View EDA komprehensif yang dapat dipakai ulang oleh notebook |
 | `notebooks/01_failure_eda.ipynb` | EDA interaktif tanpa memuat seluruh dataset detail ke memori | Tabel, grafik, pemeriksaan leakage, dan usulan time split |
 | `src/export_eda_report.py` | Menjalankan notebook dan mengekspor HTML | `reports/failure_eda.html` |
 | `src/run_pipeline.py` | Menjalankan semua SQL secara urut dan transactional per file | Seluruh view analytics tersedia |
@@ -81,7 +84,7 @@ digunakan lebih baru daripada backup ini.
 1. Hubungkan DBeaver ke database `OMEXP` yang sudah ada. Jangan membuat database
    baru.
 2. Buka SQL Editor pada koneksi tersebut.
-3. Jalankan file di folder `sql` dari `01` sampai `13`, satu per satu.
+3. Jalankan file di folder `sql` dari `01` sampai `15`, satu per satu.
 4. Aktifkan **Stop on error**. Jika satu file gagal, hentikan urutan dan periksa
    pesan nama tabel/kolom sebelum melanjutkan.
 5. Setelah file `02`, query `analytics.data_profile` untuk melihat profil data.
@@ -118,10 +121,10 @@ Untuk mengeksekusi notebook secara otomatis dan membuat HTML:
 python src\export_eda_report.py
 ```
 
-`run_pipeline.py` memperbarui clean view sekaligus membangun cache untuk tiga
-hasil agregasi yang berat. Karena dihitung sekali saat setup, step `02`, `03`,
-dan `08` dapat memerlukan beberapa detik, tetapi pembukaan di DBeaver dan proses
-`export_quality_report.py` menjadi cepat.
+`run_pipeline.py` memperbarui clean view sekaligus membangun cache untuk hasil
+agregasi yang berat. Karena dihitung sekali saat setup, pembuatan dataset
+snapshot dan perbandingan cadence dapat memerlukan beberapa menit, tetapi
+pembukaan di DBeaver dan pembuatan laporan berikutnya menjadi cepat.
 
 Setelah tabel sumber menerima data baru, perbarui seluruh cache dengan:
 
@@ -133,10 +136,16 @@ Clean view tetap membaca data sumber terbaru secara langsung. Cache profiling,
 quality, event, semantic, operational timeline, dan failure-flow diperbarui
 sekaligus oleh procedure `analytics.refresh_cached_views()`.
 
-Label failure onset yang sudah dikonfirmasi adalah kombinasi
-`status_clean = 'DISMANTLED'` dan `wo_type_clean = 'CORRECTIVE'`. `RECON`
-ditandai sebagai kegiatan terencana/non-failure. Cohort model pertama dibatasi
-ke `PART` dengan tanggal valid dan model yang konsisten.
+Label failure onset yang sudah dikonfirmasi mencakup dua pola:
+
+- `DISMANTLED + CORRECTIVE`; dan
+- `DISMANTLED + PREVENTIVE` yang kemudian dikonfirmasi oleh `BROKEN`,
+  `SENDLOG (BROKEN)`, atau `UNREPAIRABLE` sebelum installation berikutnya.
+
+Untuk pola preventive, tanggal dismantle menjadi awal berhentinya waktu
+operasional dan tanggal outcome disimpan sebagai `failure_confirmed_on`.
+`RECON` tetap menjadi kegiatan administratif/non-failure. Cohort model pertama
+dibatasi ke `PART` dengan tanggal valid dan model yang konsisten.
 
 ## Konteks bisnis journey dan perubahan pencatatan
 
@@ -149,6 +158,7 @@ antarperiode, sehingga analisis membedakan dua era:
 | Status | Work type | Arti bisnis | Perlakuan analisis |
 |---|---|---|---|
 | `DISMANTLED` | `CORRECTIVE` | Part dilepas karena gangguan/perbaikan | Failure onset |
+| `DISMANTLED` | `PREVENTIVE` | Part dilepas terencana, lalu diperiksa | Failure hanya jika sebelum installation berikutnya dikonfirmasi `BROKEN`/`UNREPAIRABLE`; selain itu tetap preventive |
 | `DISMANTLED` | `DISMANTLE` | Part dipindah/relokasi | Non-failure; lokasi tetap informatif |
 | `DISMANTLED` | `RECON` | Rekonsiliasi administratif data lama | Non-failure; waktu tidak dipercaya |
 | `RETURNED` | umumnya kosong | Part dikembalikan setelah dilepas | Konfirmasi flow, bukan onset |
@@ -216,6 +226,20 @@ hanya layak training jika tersedia follow-up penuh 30 hari; snapshot dekat batas
 data atau akhir cycle diberi `EXCLUDED_INCOMPLETE_30D_FOLLOWUP`. Seluruh fitur
 dihitung hanya dari event pada atau sebelum waktu observasi untuk mencegah data
 leakage. Dataset pertama dibatasi ke `PART` yang identifier/model-nya konsisten.
+Fitur historis mencakup jumlah event, corrective, dan preventive dalam 30, 90,
+serta 180 hari sebelumnya; failure dalam 365 hari; waktu sejak corrective
+terakhir; lama berada di lokasi terakhir; serta tahun, kuartal, bulan, hari
+dalam minggu, dan penanda akhir pekan pada tanggal snapshot.
+
+Perbandingan cadence 7 dan 30 hari tersedia di
+`analytics.eda_snapshot_cadence_comparison`. Snapshot 30 hari dipakai untuk
+baseline training karena lebih ringkas dan tetap menangkap semua failure pada
+cohort ini. Hal tersebut tidak membatasi jadwal scoring: model tetap dapat
+dijalankan setiap hari atau setiap ada event baru.
+
+Fitur lokasi menggunakan nama canonical dari `master.t_mtr_location`. Nilai
+lokasi yang tidak cocok atau ambigu tetap dipertahankan untuk audit, tetapi
+`is_location_feature_eligible = FALSE` dan tidak dipakai pada grafik lokasi.
 
 Notebook membandingkan era lama dan era detail repair, target imbalance,
 missingness, umur sampai failure, model dengan dukungan sampel minimum, fitur
@@ -231,6 +255,7 @@ Hasil ekspor:
 
 - `reports/data_profile.csv`
 - `reports/data_quality_summary.csv`
+- `reports/failure_eda.html`
 
 ## Pemeriksaan hasil
 

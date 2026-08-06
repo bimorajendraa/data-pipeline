@@ -2,6 +2,17 @@
 -- tidak diubah. Timeline audit tetap tersedia di item_journey_clean.
 
 -- Aman saat file ini dijalankan ulang secara mandiri.
+DROP VIEW IF EXISTS analytics.eda_location_lifecycle_summary;
+DROP VIEW IF EXISTS analytics.eda_location_lifecycle_detail;
+DROP VIEW IF EXISTS analytics.eda_daily_activity_anomaly;
+DROP VIEW IF EXISTS analytics.eda_item_location_installation_summary;
+DROP VIEW IF EXISTS analytics.eda_activity_calendar_summary;
+DROP VIEW IF EXISTS analytics.eda_location_activity_summary;
+DROP VIEW IF EXISTS analytics.eda_item_activity_summary;
+DROP VIEW IF EXISTS analytics.eda_outlier_summary;
+DROP VIEW IF EXISTS analytics.eda_incomplete_failure_summary;
+DROP VIEW IF EXISTS analytics.eda_incomplete_failure_detail;
+DROP VIEW IF EXISTS analytics.failure_outcome_missing_onset_review;
 DROP MATERIALIZED VIEW IF EXISTS analytics.failure_event_flow;
 DROP VIEW IF EXISTS analytics.failure_event_flow_live;
 DROP MATERIALIZED VIEW IF EXISTS analytics.item_journey_operational_timeline;
@@ -30,6 +41,8 @@ classified AS (
     SELECT
         e.*,
         woc.work_order_type_clean,
+        f.journey_id IS NOT NULL AS is_confirmed_failure_onset,
+        f.event_label_basis AS confirmed_failure_basis,
         (
             COALESCE(e.wo_type_clean = 'RECON', FALSE)
             OR COALESCE(woc.work_order_type_clean = 'RECON', FALSE)
@@ -54,6 +67,8 @@ classified AS (
     FROM analytics.item_journey_event_cache e
     LEFT JOIN work_order_context woc
         ON woc.wo_code_clean = e.wo_code_clean
+    LEFT JOIN analytics.failure_event_clean f
+        ON f.journey_id = e.journey_id
 )
 SELECT
     c.*,
@@ -68,7 +83,7 @@ SELECT
     END AS data_era,
     CASE
         WHEN c.is_admin_recon_context THEN 'ADMIN_RECON'
-        WHEN c.status_clean = 'DISMANTLED' AND c.wo_type_clean = 'CORRECTIVE'
+        WHEN c.is_confirmed_failure_onset
             THEN 'FAILURE_ONSET'
         WHEN c.status_clean = 'DISMANTLED' AND c.wo_type_clean = 'DISMANTLE'
             THEN 'RELOCATION'
@@ -86,11 +101,7 @@ SELECT
     NOT c.is_admin_recon_context AS is_non_recon_event,
     c.is_valid_operational_date AND NOT c.is_admin_recon_context
         AS is_operational_event,
-    COALESCE(
-        c.status_clean = 'DISMANTLED' AND c.wo_type_clean = 'CORRECTIVE',
-        FALSE
-    )
-        AS is_failure_onset,
+    c.is_confirmed_failure_onset AS is_failure_onset,
     COALESCE(
         c.status_clean = 'DISMANTLED' AND c.wo_type_clean = 'DISMANTLE',
         FALSE
@@ -124,6 +135,10 @@ SELECT
     LEAD(s.activity_clean) OVER operational_order AS next_operational_activity_clean,
     LAG(s.event_semantic) OVER operational_order AS previous_event_semantic,
     LEAD(s.event_semantic) OVER operational_order AS next_event_semantic,
+    LAG(s.place_canonical_clean) OVER operational_order
+        AS previous_operational_place_clean,
+    LEAD(s.place_canonical_clean) OVER operational_order
+        AS next_operational_place_clean,
     LAG(s.created_on) OVER operational_order AS previous_operational_created_on,
     LEAD(s.created_on) OVER operational_order AS next_operational_created_on
 FROM analytics.item_journey_semantic s
@@ -286,11 +301,11 @@ BEGIN
     REFRESH MATERIALIZED VIEW analytics.data_profile;
     REFRESH MATERIALIZED VIEW analytics.item_journey_event_cache;
     REFRESH MATERIALIZED VIEW analytics.item_identifier_model_cache;
+    REFRESH MATERIALIZED VIEW analytics.failure_event_clean;
     REFRESH MATERIALIZED VIEW analytics.item_journey_semantic;
     REFRESH MATERIALIZED VIEW analytics.item_journey_operational_timeline;
     REFRESH MATERIALIZED VIEW analytics.item_journey_transition_profile;
     REFRESH MATERIALIZED VIEW analytics.data_quality_summary;
-    REFRESH MATERIALIZED VIEW analytics.failure_event_clean;
     REFRESH MATERIALIZED VIEW analytics.failure_event_flow;
 END;
 $refresh$;

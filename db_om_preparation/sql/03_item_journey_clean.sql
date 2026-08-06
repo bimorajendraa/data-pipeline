@@ -141,13 +141,27 @@ master_status AS (
     WHERE analytics.clean_code(s.status_name) IS NOT NULL
 ),
 master_location AS (
-    SELECT DISTINCT location_value_clean
-    FROM master.t_mtr_location l
-    CROSS JOIN LATERAL (VALUES
-        (analytics.clean_code(l.location_code)),
-        (analytics.clean_code(l.location_name))
-    ) value(location_value_clean)
-    WHERE location_value_clean IS NOT NULL
+    -- Kode maupun nama sumber dipetakan ke satu nama master. Nilai sumber tetap
+    -- disimpan di place_clean untuk audit; place_canonical_clean hanya terisi
+    -- bila mapping master tidak ambigu.
+    SELECT
+        location_value_clean,
+        MIN(location_code_clean) AS location_code_clean,
+        MIN(location_name_clean) AS location_name_clean,
+        COUNT(DISTINCT location_name_clean) AS location_name_count
+    FROM (
+        SELECT
+            analytics.clean_code(l.location_code) AS location_code_clean,
+            analytics.clean_code(l.location_name) AS location_name_clean,
+            value.location_value_clean
+        FROM master.t_mtr_location l
+        CROSS JOIN LATERAL (VALUES
+            (analytics.clean_code(l.location_code)),
+            (analytics.clean_code(l.location_name))
+        ) value(location_value_clean)
+        WHERE value.location_value_clean IS NOT NULL
+    ) location_value
+    GROUP BY location_value_clean
 ),
 master_client AS (
     SELECT DISTINCT client_value_clean
@@ -287,7 +301,14 @@ SELECT
           OR wo.work_type_code_clean IS NULL
         THEN FALSE
         ELSE journey_wt.work_type_code_clean = wo.work_type_code_clean
-    END AS is_work_type_consistent
+    END AS is_work_type_consistent,
+    ml.location_code_clean AS place_master_code_clean,
+    ml.location_name_clean AS place_master_name_clean,
+    CASE
+        WHEN ml.location_name_count = 1 THEN ml.location_name_clean
+        ELSE NULL
+    END AS place_canonical_clean,
+    ml.location_name_count > 1 AS is_place_mapping_ambiguous
 FROM cleaned c
 LEFT JOIN master_item mi
     ON mi.item_model_code_clean = c.item_model_code_clean

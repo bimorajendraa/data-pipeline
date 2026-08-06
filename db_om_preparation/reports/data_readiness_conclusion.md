@@ -25,10 +25,10 @@ operational layer di schema `analytics`.
 | Operational timeline | 159.321 | Sumber waktu untuk EDA/model |
 | Tanggal invalid/future | 75 | Dikeluarkan dari waktu operasional |
 | Relocation | 707 | Non-failure; perubahan lokasi/siklus |
-| Failure onset | 6.714 | `DISMANTLED + CORRECTIVE` |
-| Failure eligible cohort PART | 6.667 | Siap untuk EDA PART |
-| Item dengan failure eligible | 4.115 | Positive population awal |
-| Failure flow terkonfirmasi | 5.937 | RETURN/repair process tercatat |
+| Failure onset | 6.715 | `DISMANTLED + CORRECTIVE`, ditambah preventive yang kemudian dikonfirmasi rusak |
+| Failure eligible cohort PART | 6.668 | Siap untuk EDA PART |
+| Item dengan failure eligible | 4.116 | Positive population awal |
+| Failure flow terkonfirmasi | 5.938 | RETURN/repair process tercatat |
 | Failure open/incomplete | 777 | Tetap failure, bukan negative |
 
 Sekitar 16,09% journey merupakan konteks ADMIN_RECON. Setelah RECON dan waktu
@@ -42,7 +42,7 @@ operational timeline.
 2. Tidak ada gap waktu negatif pada operational timeline.
 3. Failure onset memiliki histori panjang sejak 2013, sehingga tidak bergantung
    pada status repair detail yang baru tersedia sejak 2025.
-4. Sebanyak 5.452 dari 6.714 failure onset (81,20%) langsung didahului status
+4. Sebanyak 5.452 dari 6.715 failure onset (81,19%) langsung didahului status
    operasional `INSTALLED`.
 5. Median waktu `INSTALLED -> FAILURE_ONSET` pada kelompok tersebut sekitar
    506,76 hari.
@@ -70,11 +70,11 @@ timeline, tetapi tetap disimpan pada audit layer.
 **Severity: TINGGI.**  
 **Status: ditandai, belum seluruhnya dapat diperbaiki.**
 
-Sebanyak 777 dari 6.714 failure onset (11,57%) belum memiliki RETURN, repair
+Sebanyak 777 dari 6.715 failure onset (11,57%) belum memiliki RETURN, repair
 process, atau outcome yang dapat dikaitkan sebelum batas siklus berikutnya.
 
 - Legacy 2013–2024: 120 open/incomplete dari 4.150 failure.
-- Periode 2025+: 657 open/incomplete dari 2.564 failure.
+- Periode 2025+: 657 open/incomplete dari 2.565 failure.
 
 Angka 2025+ yang lebih tinggi dapat mencakup proses yang masih berjalan atau
 right-censoring. Record ini tetap diberi label failure berdasarkan corrective
@@ -84,12 +84,12 @@ dismantle dan tidak boleh dijadikan negative.
 
 **Severity: TINGGI untuk time-to-failure; MENENGAH untuk klasifikasi 30 hari.**
 
-Sebanyak 1.262 failure onset tidak langsung didahului `INSTALLED` pada
+Sebanyak 1.263 failure onset tidak langsung didahului `INSTALLED` pada
 operational timeline:
 
 | Previous operational status | Failure event |
 |---|---:|
-| `OK` | 442 |
+| `OK` | 443 |
 | `REPAIRED` | 224 |
 | `RETURNED` | 220 |
 | Tidak memiliki previous event | 153 |
@@ -132,9 +132,10 @@ Mapping model perlu diselesaikan sebelum record tersebut digunakan.
 - Lokasi journey tidak cocok master: 8.582 journey.
 - Lokasi work-order history tidak cocok master: 28.107 history.
 
-Nilai mentah tetap berguna untuk audit, tetapi client/lokasi belum aman menjadi
-fitur kategorikal tanpa mapping. Lokasi RECON boleh menunjukkan posisi, namun
-waktu mulai lokasi tersebut tidak dapat dipercaya.
+Nilai mentah tetap berguna untuk audit. Fitur lokasi sekarang hanya memakai nama
+canonical yang cocok dengan master; 72.340 snapshot training yang tidak memiliki
+lokasi master ditandai tidak layak untuk fitur lokasi. Lokasi RECON boleh
+menunjukkan posisi, tetapi waktu mulai lokasi tersebut tidak dapat dipercaya.
 
 ### 7. Relokasi harus memutus/memperbarui konteks lokasi
 
@@ -182,20 +183,18 @@ dataset terpisah.
 
 ## Apa yang masih kurang
 
-1. Belum ada `installation_cycle_id` yang menghubungkan installation, failure,
-   return, repaired, dan installation berikutnya sebagai satu siklus.
-2. Belum ada observation dataset per item-per-tanggal untuk target 30 hari.
-3. Belum ada definisi right-censoring dan tanggal cutoff training.
-4. Belum ada sampling manual untuk 777 incomplete flow dan 1.262 failure yang
-   tidak didahului installed.
-5. Belum ada mapping final client, lokasi, dan 732 model inconsistent.
-6. Belum ada feature set yang dijamin hanya menggunakan data sebelum observation
-   date.
-7. Belum ada time-based train/validation/test split.
-8. Belum ada baseline model, threshold risiko, dan evaluasi per era/model item.
-9. Belum ada monitoring data drift dan quality gate untuk data baru.
-10. Workflow n8n belum boleh menjadi tahap utama sebelum dataset dan model lolos
-    validasi temporal.
+1. Perlu sampling manual untuk 478 incomplete flow berumur lebih dari 180 hari,
+   217 flow berumur 31-180 hari, dan 1.263 failure yang tidak langsung didahului
+   status `INSTALLED`. Sebanyak 82 flow berumur 0-30 hari kemungkinan masih
+   berjalan pada cutoff data 3 Agustus 2026.
+2. Perlu keputusan mapping untuk 72.340 snapshot tanpa lokasi master dan 732
+   journey dengan model inconsistent.
+3. Belum ada baseline model, threshold risiko, kalibrasi probabilitas, dan
+   evaluasi per era/model/lokasi.
+4. Belum ada perbandingan performa model dengan dan tanpa fitur lokasi.
+5. Belum ada monitoring data drift dan quality gate untuk data baru.
+6. Workflow n8n belum boleh menjadi tahap utama sebelum model lolos validasi
+   temporal.
 
 ## Record yang merusak flow jika digunakan langsung
 
@@ -222,18 +221,19 @@ Jangan diperlakukan sebagai negative:
 | Audit dan data-quality review | Siap |
 | EDA flow PART | Siap |
 | Label failure onset PART | Siap |
-| Model klasifikasi failure 30 hari | Siap setelah observation dataset dibuat |
+| Model klasifikasi failure 30 hari | Dataset dan EDA siap; baseline model belum dilatih |
 | Model exact days-to-failure | Belum siap; perlu cycle dan censoring |
 | Model TERMINAL | Belum siap |
 | Otomatisasi scoring n8n | Belum; dilakukan setelah validasi model |
 
 ## Prioritas berikutnya
 
-1. Audit sampel 777 incomplete flow dan 1.262 failure non-installed.
-2. Bentuk installation/operation cycle per PART dengan relocation sebagai
-   perubahan lokasi dan RECON dikeluarkan dari waktu.
-3. Tentukan observation date dan cutoff historis.
-4. Buat target failure dalam 30 hari tanpa data leakage.
-5. Jalankan EDA per item model dan data era.
-6. Buat baseline time-split sebelum mengembangkan prediksi exact days.
-
+1. Audit sampel incomplete flow lama dan 1.263 failure non-installed.
+2. Gunakan snapshot 30 hari untuk baseline training; tetap izinkan scoring harian
+   atau event-triggered saat model digunakan.
+3. Latih baseline dengan train 2013-2024, validation 2025, dan test 2026.
+4. Bandingkan performa dengan dan tanpa fitur lokasi, karena 72.340 snapshot tidak
+   memiliki lokasi canonical dari master.
+5. Evaluasi ketidakseimbangan kelas dengan precision, recall, PR-AUC, dan
+   kalibrasi; jangan hanya memakai accuracy.
+6. Tambahkan monitoring drift sebelum otomatisasi scoring.

@@ -1,5 +1,9 @@
 -- Siklus PART dimulai hanya oleh INSTALLED dengan waktu tepercaya.
 -- RECON sudah dikeluarkan dari operational timeline dan tidak membuka siklus.
+DROP MATERIALIZED VIEW IF EXISTS analytics.eda_snapshot_cadence_comparison;
+DROP VIEW IF EXISTS analytics.eda_outlier_summary;
+DROP VIEW IF EXISTS analytics.eda_failure_unit_comparison;
+DROP VIEW IF EXISTS analytics.failure_outcome_missing_onset_review;
 DROP VIEW IF EXISTS analytics.eda_failure_readiness_summary;
 DROP VIEW IF EXISTS analytics.eda_failure_rate_by_year;
 DROP VIEW IF EXISTS analytics.eda_feature_missingness;
@@ -20,11 +24,17 @@ WITH dataset_boundary AS (
       AND o.item_identifier_clean IS NOT NULL
 ), cycle_events AS (
     SELECT i.*, f.journey_id AS failure_journey_id, f.failure_onset_on,
+        f.failure_confirmed_on, f.failure_confirmation_status,
+        f.event_label_basis AS failure_label_basis,
+        f.failure_place_clean, f.is_location_feature_eligible AS is_failure_location_valid,
         f.model_cohort_status AS failure_model_cohort_status, b.dataset_max_event_on
     FROM installed_events i
     CROSS JOIN dataset_boundary b
     LEFT JOIN LATERAL (
-        SELECT f.journey_id, f.failure_onset_on, f.model_cohort_status
+        SELECT f.journey_id, f.failure_onset_on, f.failure_confirmed_on,
+            f.failure_confirmation_status, f.event_label_basis,
+            f.failure_place_clean, f.is_location_feature_eligible,
+            f.model_cohort_status
         FROM analytics.failure_event_clean f
         WHERE f.item_identifier_clean = i.item_identifier_clean
           AND f.failure_onset_on > i.created_on
@@ -51,8 +61,14 @@ SELECT item_identifier_clean || ':' || installation_sequence::text AS installati
     item_identifier_clean, installation_sequence, journey_id AS installed_journey_id,
     created_on AS installed_on, item_model_code_clean, item_type_clean,
     item_pairing_code_clean, host_serial_code_clean, client_clean AS installed_client_clean,
-    place_clean AS installed_place_clean, next_installed_on, failure_journey_id,
-    failure_onset_on, failure_model_cohort_status,
+    place_clean AS installed_place_source_clean,
+    place_canonical_clean AS installed_place_clean,
+    place_canonical_clean IS NOT NULL AND NOT is_place_mapping_ambiguous
+        AS is_installed_location_valid,
+    next_installed_on, failure_journey_id,
+    failure_onset_on, failure_confirmed_on, failure_confirmation_status,
+    failure_label_basis, failure_place_clean, is_failure_location_valid,
+    failure_model_cohort_status,
     COALESCE(failure_onset_on, next_installed_on, dataset_max_event_on) AS cycle_end_on,
     CASE WHEN failure_onset_on IS NOT NULL THEN 'FAILURE'
          WHEN next_installed_on IS NOT NULL THEN 'REINSTALL_WITHOUT_RECORDED_FAILURE'
