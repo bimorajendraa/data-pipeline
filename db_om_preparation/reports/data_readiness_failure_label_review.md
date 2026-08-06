@@ -122,10 +122,20 @@ dari perhitungan waktu pada `analytics.item_journey_operational_timeline`.
 Failure flow tersedia melalui `analytics.failure_event_flow`; missing RETURN
 ditandai `OPEN_OR_INCOMPLETE_FLOW`, bukan dianggap non-failure.
 
-## Langkah setelah konfirmasi
+## Implementasi setelah konfirmasi
 
-1. Membuat spesifikasi label final dan view kandidat event.
-2. Menjalankan EDA PART per model, lokasi, umur, dan kejadian berulang.
-3. Membuat dataset observasi tanpa memakai informasi setelah tanggal observasi.
-4. Memulai target klasifikasi kerusakan dalam 30 hari.
-5. Melakukan split berdasarkan waktu, bukan random split.
+Seluruh tindak lanjut review ini sudah diterapkan:
+
+1. Spesifikasi label final dan cache failure sudah tersedia.
+2. EDA PART mencakup model, lokasi, waktu, umur, lifecycle, dan failure berulang.
+3. Snapshot 30 hari menghitung fitur hanya dari informasi pada atau sebelum
+   tanggal observasi; fitur dan label masa depan juga tersedia sebagai view
+   terpisah.
+4. Reinstall tanpa failure tercatat tidak otomatis dijadikan negatif. Snapshot
+   right-censored menyediakan mode utama dan mode strict untuk sensitivity test.
+5. Split yang dipakai adalah train 2014-2024, validation 2025, dan test 2026
+   dengan embargo target 30 hari, bukan random split.
+
+Angka dan keputusan terbaru dibuat otomatis di
+`reports/eda_executive_summary.md`; grafik dan analisis lengkap tersedia di
+`reports/failure_eda.html`.

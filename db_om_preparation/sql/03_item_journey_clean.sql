@@ -35,7 +35,12 @@ scored AS (
         ) AS similarity_score
     FROM source_value s
     CROSS JOIN master_reference r
-    WHERE s.source_location_clean <> 'GUDANG NUTECH'
+    WHERE NOT EXISTS (
+          SELECT 1 FROM analytics.verified_location_alias alias_match
+          WHERE alias_match.is_active
+            AND analytics.clean_code(alias_match.source_value)
+                = s.source_location_clean
+      )
       AND NOT EXISTS (
           SELECT 1 FROM master_reference exact_match
           WHERE s.source_location_clean IN (
@@ -99,6 +104,12 @@ scored AS (
     FROM source_value s
     CROSS JOIN master_reference r
     WHERE NOT EXISTS (
+        SELECT 1 FROM analytics.verified_client_alias alias_match
+        WHERE alias_match.is_active
+          AND analytics.clean_name(alias_match.source_value)
+              = s.source_client_clean
+    )
+      AND NOT EXISTS (
         SELECT 1 FROM master_reference exact_match
         WHERE s.source_client_clean IN (
             exact_match.client_code_clean,
@@ -301,14 +312,13 @@ master_location AS (
 verified_location_alias AS (
     -- Alias ini diterima berdasarkan konteks: 5.096 dari 5.611 item pada
     -- GUDANG NUTECH juga memiliki histori GUDANG NI dan alur gudangnya sama.
-    SELECT v.source_location_clean, r.location_code_clean,
-        r.location_name_clean, v.mapping_basis
-    FROM (VALUES
-        ('GUDANG NUTECH'::text, '000'::text,
-         'VERIFIED_ITEM_OVERLAP_AND_WAREHOUSE_FLOW'::text)
-    ) v(source_location_clean, target_location_code_clean, mapping_basis)
+    SELECT analytics.clean_code(v.source_value) AS source_location_clean,
+        r.location_code_clean, r.location_name_clean, v.mapping_basis,
+        v.approved_by, v.approved_at
+    FROM analytics.verified_location_alias v
     JOIN master_location_reference r
-      ON r.location_code_clean = v.target_location_code_clean
+      ON r.location_name_clean = analytics.clean_code(v.canonical_value)
+    WHERE v.is_active
 ),
 location_fuzzy_best AS (
     SELECT * FROM analytics.location_fuzzy_match_cache
@@ -331,6 +341,15 @@ master_client AS (
     ) value(client_value_clean)
     WHERE client_value_clean IS NOT NULL
     GROUP BY client_value_clean
+),
+verified_client_alias AS (
+    SELECT analytics.clean_name(v.source_value) AS source_client_clean,
+        r.client_code_clean, r.client_name_clean, v.mapping_basis,
+        v.approved_by, v.approved_at
+    FROM analytics.verified_client_alias v
+    JOIN master_client_reference r
+      ON r.client_name_clean = analytics.clean_name(v.canonical_value)
+    WHERE v.is_active
 ),
 client_fuzzy_best AS (
     SELECT * FROM analytics.client_fuzzy_match_cache
@@ -441,6 +460,8 @@ SELECT
               c.client_clean IS NOT NULL
               AND CASE
                   WHEN mc.client_name_count = 1 THEN mc.client_name_clean
+                  WHEN vca.source_client_clean IS NOT NULL
+                      THEN vca.client_name_clean
                   WHEN cfb.is_auto_accepted THEN cfb.client_name_clean
               END IS NULL
           )
@@ -459,6 +480,7 @@ SELECT
     c.client_clean IS NULL
         OR CASE
             WHEN mc.client_name_count = 1 THEN mc.client_name_clean
+            WHEN vca.source_client_clean IS NOT NULL THEN vca.client_name_clean
             WHEN cfb.is_auto_accepted THEN cfb.client_name_clean
         END IS NOT NULL AS is_client_found,
     c.wo_type_clean IS NULL
@@ -525,26 +547,32 @@ SELECT
     COALESCE(lfb.is_auto_accepted, FALSE) AS is_place_fuzzy_accepted,
     CASE
         WHEN mc.client_name_count = 1 THEN mc.client_code_clean
+        WHEN vca.source_client_clean IS NOT NULL THEN vca.client_code_clean
         WHEN cfb.is_auto_accepted THEN cfb.client_code_clean
     END AS client_master_code_clean,
     CASE
         WHEN mc.client_name_count = 1 THEN mc.client_name_clean
+        WHEN vca.source_client_clean IS NOT NULL THEN vca.client_name_clean
         WHEN cfb.is_auto_accepted THEN cfb.client_name_clean
     END AS client_master_name_clean,
     CASE
         WHEN mc.client_name_count = 1 THEN mc.client_name_clean
+        WHEN vca.source_client_clean IS NOT NULL THEN vca.client_name_clean
         WHEN cfb.is_auto_accepted THEN cfb.client_name_clean
     END AS client_canonical_clean,
     CASE
         WHEN c.client_clean IS NULL THEN 'MISSING'
         WHEN mc.client_name_count = 1 THEN 'EXACT'
         WHEN mc.client_name_count > 1 THEN 'AMBIGUOUS_EXACT'
+        WHEN vca.source_client_clean IS NOT NULL THEN 'VERIFIED_CONTEXT_ALIAS'
         WHEN cfb.is_auto_accepted THEN 'FUZZY_AUTO_ACCEPTED'
         WHEN cfb.source_client_clean IS NOT NULL THEN 'FUZZY_REVIEW'
         ELSE 'UNMATCHED'
     END AS client_mapping_method,
     COALESCE(
         CASE WHEN mc.client_name_count = 1 THEN 1.0::numeric END,
+        CASE WHEN vca.source_client_clean IS NOT NULL
+            THEN analytics.fuzzy_similarity(c.client_clean, vca.client_name_clean) END,
         cfb.similarity_score
     ) AS client_fuzzy_score,
     cfb.score_margin AS client_fuzzy_margin,
@@ -557,7 +585,13 @@ SELECT
     lfb.location_code_clean AS place_fuzzy_candidate_code_clean,
     lfb.location_name_clean AS place_fuzzy_candidate_name_clean,
     cfb.client_code_clean AS client_fuzzy_candidate_code_clean,
-    cfb.client_name_clean AS client_fuzzy_candidate_name_clean
+    cfb.client_name_clean AS client_fuzzy_candidate_name_clean,
+    vla.mapping_basis AS place_verified_mapping_basis,
+    vla.approved_by AS place_mapping_approved_by,
+    vla.approved_at AS place_mapping_approved_at,
+    vca.mapping_basis AS client_verified_mapping_basis,
+    vca.approved_by AS client_mapping_approved_by,
+    vca.approved_at AS client_mapping_approved_at
 FROM cleaned c
 LEFT JOIN master_item mi
     ON mi.item_model_code_clean = c.item_model_code_clean
@@ -579,6 +613,8 @@ LEFT JOIN location_fuzzy_best lfb
     ON lfb.source_location_clean = c.place_clean
 LEFT JOIN master_client mc
     ON mc.client_value_clean = c.client_clean
+LEFT JOIN verified_client_alias vca
+    ON vca.source_client_clean = c.client_clean
 LEFT JOIN client_fuzzy_best cfb
     ON cfb.source_client_clean = c.client_clean
 LEFT JOIN master_work_type journey_wt

@@ -24,9 +24,15 @@ BEGIN
 
     -- Objek EDA tahap 11-13 bergantung pada failure/timeline cache. Hapus
     -- terlebih dahulu agar pipeline lengkap tetap idempotent saat dijalankan ulang.
+    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.eda_feature_stability_monthly';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_target_class_distribution';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_snapshot_master_coverage';
     EXECUTE 'DROP VIEW IF EXISTS analytics.eda_failure_readiness_summary';
     EXECUTE 'DROP VIEW IF EXISTS analytics.eda_failure_rate_by_year';
     EXECUTE 'DROP VIEW IF EXISTS analytics.eda_feature_missingness';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.item_observation_30d_audit';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.item_observation_30d_labels';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.item_observation_30d_features';
     EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.item_observation_30d';
     EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.item_installation_cycle';
 

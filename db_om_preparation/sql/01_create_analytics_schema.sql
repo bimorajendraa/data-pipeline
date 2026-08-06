@@ -1,6 +1,48 @@
 -- Hanya membuat objek baru di schema analytics. Tidak mengubah tabel sumber.
 CREATE SCHEMA IF NOT EXISTS analytics;
 
+-- Mapping yang telah disetujui disimpan sebagai data, bukan hard-coded di
+-- fungsi/view. Penambahan alias berikutnya tidak memerlukan perubahan SQL.
+CREATE TABLE IF NOT EXISTS analytics.text_abbreviation_mapping (
+    source_value text PRIMARY KEY,
+    canonical_value text NOT NULL,
+    mapping_basis text NOT NULL,
+    approved_by text NOT NULL,
+    approved_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active boolean NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS analytics.verified_location_alias (
+    source_value text PRIMARY KEY,
+    canonical_value text NOT NULL,
+    mapping_basis text NOT NULL,
+    approved_by text NOT NULL,
+    approved_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active boolean NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS analytics.verified_client_alias (
+    source_value text PRIMARY KEY,
+    canonical_value text NOT NULL,
+    mapping_basis text NOT NULL,
+    approved_by text NOT NULL,
+    approved_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active boolean NOT NULL DEFAULT TRUE
+);
+
+INSERT INTO analytics.text_abbreviation_mapping (
+    source_value, canonical_value, mapping_basis, approved_by
+) VALUES (
+    'JKT', 'JAKARTA', 'COMMON_UNAMBIGUOUS_LOCATION_ABBREVIATION', 'EDA_REVIEW'
+) ON CONFLICT (source_value) DO NOTHING;
+
+INSERT INTO analytics.verified_location_alias (
+    source_value, canonical_value, mapping_basis, approved_by
+) VALUES (
+    'GUDANG NUTECH', 'GUDANG NI',
+    'VERIFIED_ITEM_OVERLAP_AND_WAREHOUSE_FLOW', 'EDA_REVIEW'
+) ON CONFLICT (source_value) DO NOTHING;
+
 CREATE OR REPLACE FUNCTION analytics.clean_code(value text)
 RETURNS text
 LANGUAGE sql
@@ -42,28 +84,40 @@ RETURN NULLIF(
 -- tidak ambigu diperluas. Nilai sumber tidak pernah ditimpa oleh fungsi ini.
 CREATE OR REPLACE FUNCTION analytics.fuzzy_match_key(value text)
 RETURNS text
-LANGUAGE sql
-IMMUTABLE
+LANGUAGE plpgsql
+STABLE
 PARALLEL SAFE
-RETURN NULLIF(
-    TRIM(
-        REGEXP_REPLACE(
-            REGEXP_REPLACE(
-                ' ' || UPPER(REGEXP_REPLACE(TRIM(value), '[^A-Za-z0-9]+', ' ', 'g')) || ' ',
-                ' JKT ', ' JAKARTA ', 'g'
-            ),
-            '\s+', ' ', 'g'
-        )
-    ),
-    ''
-);
+AS $function$
+DECLARE
+    normalized_value text;
+    mapping record;
+BEGIN
+    normalized_value := ' ' || UPPER(
+        REGEXP_REPLACE(TRIM(value), '[^A-Za-z0-9]+', ' ', 'g')
+    ) || ' ';
+    FOR mapping IN
+        SELECT UPPER(source_value) AS source_value,
+            UPPER(canonical_value) AS canonical_value
+        FROM analytics.text_abbreviation_mapping
+        WHERE is_active
+        ORDER BY CHAR_LENGTH(source_value) DESC, source_value
+    LOOP
+        normalized_value := REPLACE(
+            normalized_value,
+            ' ' || mapping.source_value || ' ',
+            ' ' || mapping.canonical_value || ' '
+        );
+    END LOOP;
+    RETURN NULLIF(TRIM(REGEXP_REPLACE(normalized_value, '\s+', ' ', 'g')), '');
+END;
+$function$;
 
 -- Implementasi Levenshtein mandiri agar pipeline tidak bergantung pada
 -- extension database atau package Python tambahan.
 CREATE OR REPLACE FUNCTION analytics.levenshtein_distance(left_value text, right_value text)
 RETURNS integer
 LANGUAGE plpgsql
-IMMUTABLE
+STABLE
 STRICT
 PARALLEL SAFE
 AS $function$
@@ -110,7 +164,7 @@ $function$;
 CREATE OR REPLACE FUNCTION analytics.fuzzy_similarity(left_value text, right_value text)
 RETURNS numeric
 LANGUAGE sql
-IMMUTABLE
+STABLE
 STRICT
 PARALLEL SAFE
 RETURN ROUND(

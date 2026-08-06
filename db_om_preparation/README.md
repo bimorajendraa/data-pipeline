@@ -27,7 +27,7 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 
 | File | Tujuan | Hasil yang diharapkan |
 |---|---|---|
-| `sql/01_create_analytics_schema.sql` | Membuat schema dan fungsi normalisasi teks | Schema `analytics`; fungsi cleaning dan candidate key nama |
+| `sql/01_create_analytics_schema.sql` | Membuat schema, fungsi normalisasi teks, dan tabel mapping terverifikasi | Schema `analytics`; fungsi cleaning, candidate key nama, serta mapping singkatan/alias yang dapat diaudit |
 | `sql/02_data_profiling.sql` | Memeriksa jumlah baris, null/kosong, unik, duplikat, variasi case/spasi, top value, dan rentang tanggal | Cache `analytics.data_profile` dan kandidat standardisasi nama |
 | `sql/03_item_journey_clean.sql` | Membersihkan journey, menyusun urutan event, dan memprofilkan transisi aktual | `analytics.item_journey_clean`, cache `analytics.item_journey_transition_profile` |
 | `sql/04_item_clean.sql` | Membersihkan inventory dan memvalidasi master item/lokasi/status | `analytics.item_clean` |
@@ -37,18 +37,17 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `sql/08_data_quality_summary.sql` | Menyatukan quality check dan daftar validasi status | Cache `analytics.data_quality_summary`, `analytics.status_validation` |
 | `sql/09_failure_event_label.sql` | Menambahkan label failure onset berdasarkan keputusan bisnis | `analytics.item_journey_failure_labeled`, cache `analytics.failure_event_clean` |
 | `sql/10_operational_timeline.sql` | Memisahkan event operasional dari RECON administratif dan mengonfirmasi flow failure | `analytics.item_journey_semantic`, `analytics.item_journey_operational_timeline`, `analytics.failure_event_flow` |
-| `sql/11_item_installation_cycle.sql` | Membentuk siklus dari INSTALLED tepercaya sampai failure/reinstall/censoring | `analytics.item_installation_cycle` |
-| `sql/12_item_observation_dataset.sql` | Membentuk snapshot 30-harian, fitur historis, target 30 hari, dan flag observability | `analytics.item_observation_30d` |
-| `sql/13_eda_summary.sql` | Membuat metrik readiness, distribusi target, cakupan master, missingness, kestabilan fitur bulanan, dan refresh dependency | View ringkasan EDA serta materialized summary drift |
-| `sql/14_extended_eda.sql` | Membandingkan cadence dan unit analisis, mengelompokkan follow-up yang belum lengkap, serta merangkum outlier | View pemeriksaan EDA lanjutan dan cache perbandingan snapshot |
-| `sql/15_comprehensive_eda.sql` | Melengkapi audit kualitas journal, univariat, hubungan item-lokasi/waktu, lifecycle satu lokasi, dan lonjakan aktivitas | View EDA komprehensif yang dapat dipakai ulang oleh notebook |
+| `sql/11_item_installation_cycle.sql` | Membentuk siklus dari INSTALLED tepercaya sampai failure/reinstall/censoring serta mengaudit kepastian akhir siklus | `analytics.item_installation_cycle` |
+| `sql/12_item_observation_dataset.sql` | Membentuk snapshot 30-harian dan memisahkan fitur saat observasi, label masa depan, serta kolom audit | `analytics.item_observation_30d`, `item_observation_30d_features`, `item_observation_30d_labels`, dan `item_observation_30d_audit` |
+| `sql/13_eda_views.sql` | Menyatukan readiness, kualitas, distribusi, tren, lifecycle, target, stability, dan refresh dependency | Seluruh view pendukung EDA serta materialized summary cadence/drift |
+| `queries/eda_manual_checks.sql` | Menyediakan query pemeriksaan manual tanpa tercampur dengan DDL pipeline | Preview dan drill-down audit yang aman dijalankan terpisah |
 | `notebooks/01_failure_eda.ipynb` | EDA interaktif tanpa memuat seluruh dataset detail ke memori | Tabel, grafik, pemeriksaan leakage, dan usulan time split |
-| `src/export_eda_report.py` | Menjalankan notebook dan mengekspor HTML | `reports/failure_eda.html` |
+| `src/export_eda_report.py` | Menjalankan notebook, mengekspor HTML, dan membuat ringkasan eksekutif dari hasil database terkini | `reports/failure_eda.html` dan `reports/eda_executive_summary.md` |
 | `src/run_pipeline.py` | Menjalankan semua SQL secara urut dan transactional per file | Seluruh view analytics tersedia |
 | `src/export_quality_report.py` | Mengekspor profiling dan quality summary | Dua CSV di folder `reports` |
 
-Kesimpulan kesiapan, kejanggalan, risiko timeline, dan pekerjaan yang masih
-diperlukan tersedia di `reports/data_readiness_conclusion.md`.
+Kesimpulan kesiapan, kejanggalan, risiko timeline, dan keputusan berikutnya
+dibuat otomatis di `reports/eda_executive_summary.md` ketika laporan diekspor.
 
 Nilai `*_original` dipertahankan pada clean views agar setiap normalisasi dapat
 ditelusuri. Record yang gagal validasi tidak dihapus.
@@ -63,6 +62,11 @@ Fuzzy matching baru dijalankan untuk nilai yang belum cocok. Kandidat hanya
 diterima otomatis apabila kemiripan minimal 90% dan unggul minimal 8 poin dari
 kandidat kedua. Nama sumber, kandidat, skor, margin, dan metode mapping tetap
 disimpan agar keputusan dapat diaudit.
+
+Singkatan dan alias yang telah diverifikasi tidak ditanam langsung di fungsi.
+Nilainya disimpan pada `analytics.text_abbreviation_mapping`,
+`analytics.verified_location_alias`, dan `analytics.verified_client_alias`
+bersama dasar mapping, penyetuju, waktu persetujuan, serta status aktif.
 
 - `KERETE COMMUTER INDONESIA (KCI)` diterima sebagai typo dari
   `KERETA COMMUTER INDONESIA (KCI)` karena melewati kedua batas aman.
@@ -104,7 +108,7 @@ digunakan lebih baru daripada backup ini.
 1. Hubungkan DBeaver ke database `OMEXP` yang sudah ada. Jangan membuat database
    baru.
 2. Buka SQL Editor pada koneksi tersebut.
-3. Jalankan file di folder `sql` dari `01` sampai `15`, satu per satu.
+3. Jalankan 13 file di folder `sql` dari `01` sampai `13`, satu per satu.
 4. Aktifkan **Stop on error**. Jika satu file gagal, hentikan urutan dan periksa
    pesan nama tabel/kolom sebelum melanjutkan.
 5. Setelah file `02`, query `analytics.data_profile` untuk melihat profil data.
@@ -247,8 +251,14 @@ timestamp sama/berdurasi nol ditandai tidak valid dan tidak masuk cohort awal.
 
 `analytics.item_observation_30d` memakai snapshot setiap 30 hari. Target bernilai
 positif hanya jika failure terjadi setelah snapshot dan dalam 30 hari. Negatif
-hanya layak training jika tersedia follow-up penuh 30 hari; snapshot dekat batas
-data atau akhir cycle diberi `EXCLUDED_INCOMPLETE_30D_FOLLOWUP`. Seluruh fitur
+hanya layak training jika tersedia follow-up penuh 30 hari dan cycle tidak
+berakhir hanya karena reinstall tanpa failure yang tercatat. Snapshot reinstall
+tersebut diberi `EXCLUDED_UNKNOWN_REINSTALL_WITHOUT_FAILURE`, bukan otomatis
+negatif. Snapshot dekat batas data atau akhir cycle diberi
+`EXCLUDED_INCOMPLETE_30D_FOLLOWUP`. Snapshot jauh sebelum failure nyata tetap
+boleh menjadi negatif bila failure tersebut berada di luar horizon 30 hari.
+Flag strict tambahan menerima negatif dari cycle failure terkonfirmasi atau
+right-censored cycle yang aktivitas akhirnya masih terkonfirmasi. Seluruh fitur
 dihitung hanya dari event pada atau sebelum waktu observasi untuk mencegah data
 leakage. Dataset pertama dibatasi ke `PART` yang identifier/model-nya konsisten.
 Fitur historis mencakup jumlah event, corrective, dan preventive dalam 30, 90,
@@ -287,6 +297,7 @@ Hasil ekspor:
 - `reports/data_profile.csv`
 - `reports/data_quality_summary.csv`
 - `reports/failure_eda.html`
+- `reports/eda_executive_summary.md`
 
 ## Pemeriksaan hasil
 

@@ -1,10 +1,16 @@
 -- Dataset klasifikasi 30 hari; fitur hanya memakai event pada/before snapshot.
+DROP MATERIALIZED VIEW IF EXISTS analytics.eda_feature_stability_monthly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.eda_snapshot_cadence_comparison;
+DROP VIEW IF EXISTS analytics.eda_target_class_distribution;
+DROP VIEW IF EXISTS analytics.eda_snapshot_master_coverage;
 DROP VIEW IF EXISTS analytics.eda_outlier_summary;
 DROP VIEW IF EXISTS analytics.eda_failure_unit_comparison;
 DROP VIEW IF EXISTS analytics.eda_failure_readiness_summary;
 DROP VIEW IF EXISTS analytics.eda_failure_rate_by_year;
 DROP VIEW IF EXISTS analytics.eda_feature_missingness;
+DROP VIEW IF EXISTS analytics.item_observation_30d_audit;
+DROP VIEW IF EXISTS analytics.item_observation_30d_labels;
+DROP VIEW IF EXISTS analytics.item_observation_30d_features;
 DROP MATERIALIZED VIEW IF EXISTS analytics.item_observation_30d;
 
 CREATE MATERIALIZED VIEW analytics.item_observation_30d AS
@@ -16,8 +22,25 @@ WITH snapshot AS (
         (c.failure_onset_on IS NOT NULL
           AND c.failure_onset_on > gs.observation_on
           AND c.failure_onset_on <= gs.observation_on + INTERVAL '30 days')
-        OR gs.observation_on + INTERVAL '30 days' <= LEAST(c.cycle_end_on, c.dataset_max_event_on)
-          AS is_target_observable
+        OR (
+            c.is_negative_cycle_eligible
+            AND gs.observation_on + INTERVAL '30 days'
+                <= LEAST(c.cycle_end_on, c.dataset_max_event_on)
+        ) AS is_target_observable,
+        (c.failure_onset_on IS NOT NULL
+          AND c.failure_onset_on > gs.observation_on
+          AND c.failure_onset_on <= gs.observation_on + INTERVAL '30 days')
+        OR gs.observation_on + INTERVAL '30 days'
+            <= LEAST(c.cycle_end_on, c.dataset_max_event_on)
+          AS is_legacy_target_observable,
+        (c.failure_onset_on IS NOT NULL
+          AND c.failure_onset_on > gs.observation_on
+          AND c.failure_onset_on <= gs.observation_on + INTERVAL '30 days')
+        OR (
+            c.is_strict_negative_cycle_eligible
+            AND gs.observation_on + INTERVAL '30 days'
+                <= LEAST(c.item_observation_end_on, c.dataset_max_event_on)
+        ) AS is_strict_target_observable
     FROM analytics.item_installation_cycle c
     CROSS JOIN LATERAL generate_series(c.installed_on, c.cycle_end_on - INTERVAL '1 microsecond', INTERVAL '30 days') gs(observation_on)
     WHERE c.is_initial_model_cohort AND c.installed_on < c.cycle_end_on
@@ -106,6 +129,7 @@ SELECT installation_cycle_id, item_identifier_clean, observation_on,
     COALESCE(prior_preventive_180d, 0) AS prior_preventive_180d,
     COALESCE(prior_failure_365d, 0) AS prior_failure_365d,
     COALESCE(prior_failure_count, 0) > 0 AS has_prior_failure,
+    COALESCE(prior_corrective_count, 0) > 0 AS has_prior_corrective,
     COALESCE(prior_distinct_places, 0) AS prior_distinct_places,
     EXTRACT(EPOCH FROM (observation_on - last_event_on)) / 86400.0 AS days_since_last_event,
     EXTRACT(EPOCH FROM (observation_on - last_failure_on)) / 86400.0 AS days_since_last_failure,
@@ -118,8 +142,17 @@ SELECT installation_cycle_id, item_identifier_clean, observation_on,
     failure_label_basis AS next_failure_label_basis,
     failure_place_clean AS next_failure_place_clean,
     target_failure_30d,
-    is_target_observable, is_target_observable AS is_training_eligible,
+    cycle_end_reason, cycle_quality_status, observation_end_reason,
+    item_last_seen_on, item_observation_end_on,
+    is_activity_coverage_confirmed, is_cycle_label_reliable,
+    is_negative_cycle_eligible, is_strict_negative_cycle_eligible,
+    is_legacy_target_observable, is_target_observable,
+    is_strict_target_observable,
+    is_target_observable AS is_training_eligible,
+    is_strict_target_observable AS is_strict_training_eligible,
     CASE WHEN target_failure_30d THEN 'POSITIVE_FAILURE_WITHIN_30D'
+         WHEN cycle_end_reason = 'REINSTALL_WITHOUT_RECORDED_FAILURE'
+            THEN 'EXCLUDED_UNKNOWN_REINSTALL_WITHOUT_FAILURE'
          WHEN is_target_observable THEN 'NEGATIVE_FULL_30D_FOLLOWUP'
          ELSE 'EXCLUDED_INCOMPLETE_30D_FOLLOWUP' END AS target_quality_status
 FROM features;
@@ -127,3 +160,34 @@ FROM features;
 CREATE UNIQUE INDEX item_observation_30d_key_idx ON analytics.item_observation_30d (installation_cycle_id, observation_on);
 CREATE INDEX item_observation_30d_target_idx ON analytics.item_observation_30d (is_training_eligible, target_failure_30d, observation_on);
 CREATE INDEX item_observation_30d_model_idx ON analytics.item_observation_30d (item_model_code_clean, observation_on);
+
+-- Pemisahan fisik ini mencegah kolom jawaban masa depan ikut terambil ketika
+-- modeling. View audit lama tetap tersedia untuk EDA dan penelusuran label.
+CREATE OR REPLACE VIEW analytics.item_observation_30d_features AS
+SELECT installation_cycle_id, item_identifier_clean, observation_on,
+    observation_date, observation_year, observation_quarter, observation_month,
+    observation_day_of_week, is_weekend, item_model_code_clean, item_type_clean,
+    installed_client_clean, installed_place_clean, last_place_clean,
+    is_location_feature_eligible, installed_on, days_since_installation,
+    total_prior_events, prior_failure_count, prior_corrective_count,
+    prior_relocation_count, prior_preventive_count, prior_repair_process_count,
+    prior_events_30d, prior_events_90d, prior_events_180d,
+    prior_corrective_30d, prior_corrective_90d, prior_corrective_180d,
+    prior_preventive_30d, prior_preventive_90d, prior_preventive_180d,
+    prior_failure_365d, has_prior_failure, has_prior_corrective,
+    prior_distinct_places, days_since_last_event, days_since_last_failure,
+    days_since_last_corrective, days_at_last_location, last_status_clean
+FROM analytics.item_observation_30d;
+
+CREATE OR REPLACE VIEW analytics.item_observation_30d_labels AS
+SELECT installation_cycle_id, observation_on, target_failure_30d,
+    is_training_eligible, is_strict_training_eligible,
+    is_legacy_target_observable, is_target_observable,
+    is_strict_target_observable, target_quality_status,
+    cycle_end_reason, cycle_quality_status, observation_end_reason,
+    is_activity_coverage_confirmed, is_cycle_label_reliable,
+    is_negative_cycle_eligible, is_strict_negative_cycle_eligible
+FROM analytics.item_observation_30d;
+
+CREATE OR REPLACE VIEW analytics.item_observation_30d_audit AS
+SELECT * FROM analytics.item_observation_30d;

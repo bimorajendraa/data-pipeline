@@ -1,12 +1,18 @@
 -- Siklus PART dimulai hanya oleh INSTALLED dengan waktu tepercaya.
 -- RECON sudah dikeluarkan dari operational timeline dan tidak membuka siklus.
+DROP MATERIALIZED VIEW IF EXISTS analytics.eda_feature_stability_monthly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.eda_snapshot_cadence_comparison;
+DROP VIEW IF EXISTS analytics.eda_target_class_distribution;
+DROP VIEW IF EXISTS analytics.eda_snapshot_master_coverage;
 DROP VIEW IF EXISTS analytics.eda_outlier_summary;
 DROP VIEW IF EXISTS analytics.eda_failure_unit_comparison;
 DROP VIEW IF EXISTS analytics.failure_outcome_missing_onset_review;
 DROP VIEW IF EXISTS analytics.eda_failure_readiness_summary;
 DROP VIEW IF EXISTS analytics.eda_failure_rate_by_year;
 DROP VIEW IF EXISTS analytics.eda_feature_missingness;
+DROP VIEW IF EXISTS analytics.item_observation_30d_audit;
+DROP VIEW IF EXISTS analytics.item_observation_30d_labels;
+DROP VIEW IF EXISTS analytics.item_observation_30d_features;
 DROP MATERIALIZED VIEW IF EXISTS analytics.item_observation_30d;
 DROP MATERIALIZED VIEW IF EXISTS analytics.item_installation_cycle;
 
@@ -14,10 +20,19 @@ CREATE MATERIALIZED VIEW analytics.item_installation_cycle AS
 WITH dataset_boundary AS (
     SELECT MAX(created_on) AS dataset_max_event_on
     FROM analytics.item_journey_operational_timeline
+), item_activity_boundary AS (
+    SELECT item_identifier_clean,
+        MAX(created_on) AS item_last_seen_on,
+        (ARRAY_AGG(status_clean ORDER BY created_on DESC, journey_id DESC))[1]
+            AS item_last_status_clean
+    FROM analytics.item_journey_operational_timeline
+    WHERE item_identifier_clean IS NOT NULL
+    GROUP BY item_identifier_clean
 ), installed_events AS (
     SELECT o.*,
         ROW_NUMBER() OVER (PARTITION BY o.item_identifier_clean ORDER BY o.created_on, o.journey_id) AS installation_sequence,
-        LEAD(o.created_on) OVER (PARTITION BY o.item_identifier_clean ORDER BY o.created_on, o.journey_id) AS next_installed_on
+        LEAD(o.created_on) OVER (PARTITION BY o.item_identifier_clean ORDER BY o.created_on, o.journey_id) AS next_installed_on,
+        LEAD(o.journey_id) OVER (PARTITION BY o.item_identifier_clean ORDER BY o.created_on, o.journey_id) AS next_installed_journey_id
     FROM analytics.item_journey_operational_timeline o
     WHERE o.status_clean = 'INSTALLED'
       AND o.item_category_clean = 'PART'
@@ -27,9 +42,13 @@ WITH dataset_boundary AS (
         f.failure_confirmed_on, f.failure_confirmation_status,
         f.event_label_basis AS failure_label_basis,
         f.failure_place_clean, f.is_location_feature_eligible AS is_failure_location_valid,
-        f.model_cohort_status AS failure_model_cohort_status, b.dataset_max_event_on
+        f.model_cohort_status AS failure_model_cohort_status,
+        b.dataset_max_event_on, item_end.item_last_seen_on,
+        item_end.item_last_status_clean
     FROM installed_events i
     CROSS JOIN dataset_boundary b
+    JOIN item_activity_boundary item_end
+      ON item_end.item_identifier_clean = i.item_identifier_clean
     LEFT JOIN LATERAL (
         SELECT f.journey_id, f.failure_onset_on, f.failure_confirmed_on,
             f.failure_confirmation_status, f.event_label_basis,
@@ -37,8 +56,12 @@ WITH dataset_boundary AS (
             f.model_cohort_status
         FROM analytics.failure_event_clean f
         WHERE f.item_identifier_clean = i.item_identifier_clean
-          AND f.failure_onset_on > i.created_on
-          AND (i.next_installed_on IS NULL OR f.failure_onset_on < i.next_installed_on)
+          AND (f.failure_onset_on, f.journey_id) > (i.created_on, i.journey_id)
+          AND (
+              i.next_installed_on IS NULL
+              OR (f.failure_onset_on, f.journey_id)
+                    < (i.next_installed_on, i.next_installed_journey_id)
+          )
         ORDER BY f.failure_onset_on, f.journey_id LIMIT 1
     ) f ON TRUE
 ), validated AS (
@@ -65,7 +88,7 @@ SELECT item_identifier_clean || ':' || installation_sequence::text AS installati
     place_canonical_clean AS installed_place_clean,
     place_canonical_clean IS NOT NULL AND NOT is_place_mapping_ambiguous
         AS is_installed_location_valid,
-    next_installed_on, failure_journey_id,
+    next_installed_on, next_installed_journey_id, failure_journey_id,
     failure_onset_on, failure_confirmed_on, failure_confirmation_status,
     failure_label_basis, failure_place_clean, is_failure_location_valid,
     failure_model_cohort_status,
@@ -73,8 +96,43 @@ SELECT item_identifier_clean || ':' || installation_sequence::text AS installati
     CASE WHEN failure_onset_on IS NOT NULL THEN 'FAILURE'
          WHEN next_installed_on IS NOT NULL THEN 'REINSTALL_WITHOUT_RECORDED_FAILURE'
          ELSE 'RIGHT_CENSORED_AT_DATA_END' END AS cycle_end_reason,
+    item_last_seen_on,
+    COALESCE(failure_onset_on, next_installed_on, item_last_seen_on)
+        AS item_observation_end_on,
+    CASE
+        WHEN failure_onset_on IS NOT NULL THEN 'OBSERVED_FAILURE'
+        WHEN next_installed_on IS NOT NULL THEN 'OBSERVED_REINSTALL'
+        WHEN dataset_max_event_on - item_last_seen_on <= INTERVAL '30 days'
+            THEN 'RECENT_ITEM_ACTIVITY_NEAR_DATA_END'
+        ELSE 'ITEM_HISTORY_STOPS_BEFORE_DATA_END'
+    END AS observation_end_reason,
+    item_last_status_clean,
+    failure_onset_on IS NOT NULL
+      OR next_installed_on IS NOT NULL
+      OR dataset_max_event_on - item_last_seen_on <= INTERVAL '30 days'
+        AS is_activity_coverage_confirmed,
     failure_onset_on IS NOT NULL AS has_observed_failure,
     failure_onset_on IS NULL AND next_installed_on IS NULL AS is_right_censored,
+    failure_onset_on IS NOT NULL OR next_installed_on IS NULL
+        AS is_cycle_label_reliable,
+    -- Snapshot sebelum sebuah failure tetap boleh menjadi negatif bila failure
+    -- tersebut berada di luar horizon 30 hari. Yang tidak boleh otomatis
+    -- negatif hanyalah cycle yang ditutup oleh reinstall tanpa failure tercatat.
+    failure_onset_on IS NOT NULL OR next_installed_on IS NULL
+        AS is_negative_cycle_eligible,
+    failure_onset_on IS NOT NULL
+      OR (
+          next_installed_on IS NULL
+          AND dataset_max_event_on - item_last_seen_on <= INTERVAL '30 days'
+      ) AS is_strict_negative_cycle_eligible,
+    CASE
+        WHEN failure_onset_on IS NOT NULL THEN 'RELIABLE_OBSERVED_FAILURE'
+        WHEN next_installed_on IS NOT NULL
+            THEN 'UNKNOWN_REINSTALL_WITHOUT_RECORDED_FAILURE'
+        WHEN dataset_max_event_on - item_last_seen_on <= INTERVAL '30 days'
+            THEN 'RIGHT_CENSORED_RECENT_ACTIVITY'
+        ELSE 'RIGHT_CENSORED_ACTIVITY_COVERAGE_UNCONFIRMED'
+    END AS cycle_quality_status,
     is_item_found, is_item_model_consistent,
     created_on < COALESCE(failure_onset_on, next_installed_on, dataset_max_event_on)
         AS is_cycle_time_valid,
@@ -82,6 +140,8 @@ SELECT item_identifier_clean || ':' || installation_sequence::text AS installati
         AND created_on < COALESCE(failure_onset_on, next_installed_on, dataset_max_event_on)
         AS is_initial_model_cohort,
     dataset_max_event_on,
+    EXTRACT(EPOCH FROM (dataset_max_event_on - item_last_seen_on)) / 86400.0
+        AS days_item_unseen_at_dataset_end,
     EXTRACT(EPOCH FROM (failure_onset_on - created_on)) / 86400.0 AS days_installed_to_failure
 FROM validated;
 
