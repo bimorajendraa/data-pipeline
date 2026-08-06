@@ -124,18 +124,33 @@ Terdapat 732 journey dengan model item yang tidak konsisten terhadap inventory.
 Pada failure onset, 14 event terdampak dan sudah dikeluarkan dari cohort awal.
 Mapping model perlu diselesaikan sebelum record tersebut digunakan.
 
-### 6. Client dan lokasi belum sepenuhnya cocok master
+### 6. Pencocokan client dan lokasi
 
 **Severity: MENENGAH untuk fitur; RENDAH untuk label failure.**
 
-- Client tidak cocok master: 58.645 journey.
-- Lokasi journey tidak cocok master: 8.582 journey.
+- Client tidak cocok master setelah mapping: 0 journey. Sebanyak 58.645 journey
+  dengan typo `KERETE COMMUTER INDONESIA (KCI)` sudah dipetakan ke
+  `KERETA COMMUTER INDONESIA (KCI)` melalui fuzzy matching yang melewati batas
+  skor dan margin aman.
+- Lokasi journey tidak cocok master setelah mapping: 15 journey, semuanya
+  `NOC JUANDA` dan tetap masuk review karena skor fuzzy hanya 61,54%.
+- Sebanyak 8.567 journey `GUDANG NUTECH` sudah dipetakan ke `GUDANG NI`
+  berdasarkan tumpang-tindih item dan kesamaan alur gudang, bukan fuzzy semata.
 - Lokasi work-order history tidak cocok master: 28.107 history.
 
 Nilai mentah tetap berguna untuk audit. Fitur lokasi sekarang hanya memakai nama
-canonical yang cocok dengan master; 72.340 snapshot training yang tidak memiliki
+canonical yang cocok dengan master; 174 snapshot training yang tidak memiliki
 lokasi master ditandai tidak layak untuk fitur lokasi. Lokasi RECON boleh
 menunjukkan posisi, tetapi waktu mulai lokasi tersebut tidak dapat dipercaya.
+
+### 6a. Lonjakan 4.011 event bukan pemasangan atau kerusakan
+
+Pada 3 Juli 2024 terdapat 4.011 event dengan kombinasi `OK + RECEPTION` di
+`GUDANG NUTECH`. Seluruhnya diklasifikasikan sebagai
+`BULK_WAREHOUSE_RECEPTION`: pencatatan penerimaan barang secara massal di
+gudang. Pada kelompok ini tidak ada status `INSTALLED`, `DISMANTLED`, ataupun
+failure. Event tetap dipertahankan sebagai histori operasional, tetapi tidak
+boleh dihitung sebagai pemasangan, pembongkaran, atau kerusakan.
 
 ### 7. Relokasi harus memutus/memperbarui konteks lokasi
 
@@ -181,18 +196,72 @@ Hanya 29 terminal yang memiliki corrective dismantle, dibanding 4.123 PART pada
 analisis awal. Model pertama harus khusus PART; TERMINAL memerlukan definisi dan
 dataset terpisah.
 
+### 11. Target 30 hari sangat tidak seimbang
+
+**Severity: TINGGI untuk evaluasi model; bukan kesalahan data.**
+
+Dari 1.388.036 snapshot training, hanya 5.876 snapshot positif (0,4233%) dan
+1.382.160 negatif (99,5767%). Artinya terdapat sekitar 235,22 snapshot negatif
+untuk setiap satu positif. Accuracy tidak boleh menjadi metrik utama. Baseline
+harus dinilai dengan precision, recall, PR-AUC, ROC-AUC, confusion matrix, dan
+kalibrasi probabilitas. Class weight atau resampling hanya boleh dipasang pada
+data train setelah split waktu, bukan sebelum split.
+
+### 12. Sebagian fitur numerik sangat redundan
+
+Matriks Pearson dan Spearman sudah ditambahkan. Ditemukan 10 pasangan fitur
+dengan |Spearman| minimal 0,80. Enam pasangan bahkan melampaui 0,95, terutama
+antara `days_since_installation`, `days_since_last_event`,
+`days_since_last_corrective`, dan `days_at_last_location`. Fitur-fitur tersebut
+tidak perlu langsung dibuang, tetapi baseline harus membandingkan pemilihan satu
+fitur representatif, regularisasi, dan hasil validasi temporal.
+
+Screening Information Value menempatkan `days_since_last_corrective` paling
+tinggi dengan IV 1,3209. Nilai sebesar ini belum berarti fitur pasti terbaik;
+justru perlu audit leakage, perubahan proses, missing struktural, dan kestabilan
+waktu. IV di laporan adalah screening univariat, bukan feature importance model
+final.
+
+### 13. Cakupan master cukup aman, tetapi fallback tetap diperlukan
+
+Client canonical tersedia pada seluruh 1.388.036 snapshot. Lokasi canonical
+tersedia pada 1.387.862 snapshot; hanya 174 snapshot (0,0125%) yang unmatched.
+Dari 153 kategori lokasi, lima kategori memiliki kurang dari 100 snapshot, tetapi
+seluruh kategori langka tersebut hanya mencakup 0,0249% snapshot. Fitur lokasi
+aman diuji sebagai prediktor dengan kategori `UNKNOWN`, missing flag, minimum
+support, penggabungan kategori langka bila perlu, dan pembanding model tanpa
+lokasi.
+
+### 14. Missing struktural dan drift sudah dipetakan
+
+`days_since_last_failure` kosong pada 94,3577% snapshot karena mayoritas PART
+belum pernah failure. `days_since_last_corrective` kosong pada 88,0050% snapshot
+karena belum pernah corrective. Keduanya bukan otomatis kesalahan data dan tidak
+boleh langsung diisi nol; gunakan indikator "belum pernah", sentinel/imputasi
+yang konsisten, dan validasi temporal. Missing lokasi hanya 0,0125%; fitur inti
+lain yang diaudit tidak memiliki missing.
+
+Ringkasan mean, median, persentil 90, dan missing rate bulanan tersedia untuk
+delapan fitur dari Januari 2013 sampai Juli 2026. PSI terhadap referensi 2024
+menemukan lima kombinasi fitur-tahun dengan drift besar: dua pada 2025 dan tiga
+pada 2026. `days_since_installation` dan `days_since_last_event` drift pada kedua
+tahun; `days_at_last_location` juga drift pada 2026. Karena 2026 masih parsial,
+hasilnya perlu dikonfirmasi melalui validation/test temporal dan monitoring
+produksi.
+
 ## Apa yang masih kurang
 
 1. Perlu sampling manual untuk 478 incomplete flow berumur lebih dari 180 hari,
    217 flow berumur 31-180 hari, dan 1.263 failure yang tidak langsung didahului
    status `INSTALLED`. Sebanyak 82 flow berumur 0-30 hari kemungkinan masih
    berjalan pada cutoff data 3 Agustus 2026.
-2. Perlu keputusan mapping untuk 72.340 snapshot tanpa lokasi master dan 732
-   journey dengan model inconsistent.
+2. Perlu review manual untuk 15 event `NOC JUANDA`, 174 snapshot tanpa lokasi
+   master, dan 732 journey dengan model inconsistent.
 3. Belum ada baseline model, threshold risiko, kalibrasi probabilitas, dan
    evaluasi per era/model/lokasi.
 4. Belum ada perbandingan performa model dengan dan tanpa fitur lokasi.
-5. Belum ada monitoring data drift dan quality gate untuk data baru.
+5. Baseline drift EDA sudah ada, tetapi belum ada monitoring berulang dan quality
+   gate untuk data baru di produksi.
 6. Workflow n8n belum boleh menjadi tahap utama sebelum model lolos validasi
    temporal.
 
@@ -232,8 +301,12 @@ Jangan diperlakukan sebagai negative:
 2. Gunakan snapshot 30 hari untuk baseline training; tetap izinkan scoring harian
    atau event-triggered saat model digunakan.
 3. Latih baseline dengan train 2013-2024, validation 2025, dan test 2026.
-4. Bandingkan performa dengan dan tanpa fitur lokasi, karena 72.340 snapshot tidak
-   memiliki lokasi canonical dari master.
-5. Evaluasi ketidakseimbangan kelas dengan precision, recall, PR-AUC, dan
-   kalibrasi; jangan hanya memakai accuracy.
-6. Tambahkan monitoring drift sebelum otomatisasi scoring.
+4. Bandingkan performa dengan dan tanpa fitur lokasi untuk memastikan kontribusi
+   lokasi tetap stabil; 174 snapshot belum memiliki lokasi canonical dari master.
+5. Evaluasi ketidakseimbangan kelas dengan precision, recall, PR-AUC, ROC-AUC,
+   confusion matrix, dan kalibrasi; jangan hanya memakai accuracy. Terapkan class
+   weight/resampling hanya pada train.
+6. Audit IV tinggi dan 10 pasangan fitur redundan melalui ablation/regularisasi
+   pada validation 2025 dan test 2026.
+7. Jadikan PSI 2024 sebagai baseline awal, lalu buat monitoring drift berkala dan
+   quality gate sebelum otomatisasi scoring.

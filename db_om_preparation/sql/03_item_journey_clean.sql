@@ -1,3 +1,131 @@
+-- Kandidat fuzzy dihitung satu kali per nilai unik, lalu disimpan di cache
+-- analytics. Ini mencegah Levenshtein dihitung ulang untuk setiap event saat
+-- view clean atau laporan dibaca. Tabel sumber tetap tidak disentuh.
+CREATE TABLE IF NOT EXISTS analytics.location_fuzzy_match_cache (
+    source_location_clean text PRIMARY KEY,
+    location_code_clean text,
+    location_name_clean text,
+    similarity_score numeric,
+    second_best_score numeric,
+    score_margin numeric,
+    is_auto_accepted boolean NOT NULL
+);
+
+TRUNCATE TABLE analytics.location_fuzzy_match_cache;
+
+INSERT INTO analytics.location_fuzzy_match_cache (
+    source_location_clean, location_code_clean, location_name_clean,
+    similarity_score, second_best_score, score_margin, is_auto_accepted
+)
+WITH source_value AS (
+    SELECT DISTINCT analytics.clean_code(j.place) AS source_location_clean
+    FROM journal.t_item_journey j
+    WHERE analytics.clean_code(j.place) IS NOT NULL
+),
+master_reference AS (
+    SELECT DISTINCT analytics.clean_code(l.location_code) AS location_code_clean,
+        analytics.clean_code(l.location_name) AS location_name_clean
+    FROM master.t_mtr_location l
+    WHERE analytics.clean_code(l.location_name) IS NOT NULL
+),
+scored AS (
+    SELECT s.source_location_clean, r.location_code_clean, r.location_name_clean,
+        analytics.fuzzy_similarity(
+            s.source_location_clean, r.location_name_clean
+        ) AS similarity_score
+    FROM source_value s
+    CROSS JOIN master_reference r
+    WHERE s.source_location_clean <> 'GUDANG NUTECH'
+      AND NOT EXISTS (
+          SELECT 1 FROM master_reference exact_match
+          WHERE s.source_location_clean IN (
+              exact_match.location_code_clean,
+              exact_match.location_name_clean
+          )
+      )
+),
+ranked AS (
+    SELECT scored.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY source_location_clean
+            ORDER BY similarity_score DESC, location_name_clean
+        ) AS candidate_rank,
+        LEAD(similarity_score) OVER (
+            PARTITION BY source_location_clean
+            ORDER BY similarity_score DESC, location_name_clean
+        ) AS second_best_score
+    FROM scored
+)
+SELECT source_location_clean, location_code_clean, location_name_clean,
+    similarity_score, second_best_score,
+    similarity_score - COALESCE(second_best_score, 0) AS score_margin,
+    similarity_score >= 0.90
+      AND similarity_score - COALESCE(second_best_score, 0) >= 0.08
+FROM ranked
+WHERE candidate_rank = 1;
+
+CREATE TABLE IF NOT EXISTS analytics.client_fuzzy_match_cache (
+    source_client_clean text PRIMARY KEY,
+    client_code_clean text,
+    client_name_clean text,
+    similarity_score numeric,
+    second_best_score numeric,
+    score_margin numeric,
+    is_auto_accepted boolean NOT NULL
+);
+
+TRUNCATE TABLE analytics.client_fuzzy_match_cache;
+
+INSERT INTO analytics.client_fuzzy_match_cache (
+    source_client_clean, client_code_clean, client_name_clean,
+    similarity_score, second_best_score, score_margin, is_auto_accepted
+)
+WITH source_value AS (
+    SELECT DISTINCT analytics.clean_name(j.client) AS source_client_clean
+    FROM journal.t_item_journey j
+    WHERE analytics.clean_name(j.client) IS NOT NULL
+),
+master_reference AS (
+    SELECT DISTINCT analytics.clean_name(c.client_code) AS client_code_clean,
+        analytics.clean_name(c.client_name) AS client_name_clean
+    FROM master.t_mtr_client c
+    WHERE analytics.clean_name(c.client_name) IS NOT NULL
+),
+scored AS (
+    SELECT s.source_client_clean, r.client_code_clean, r.client_name_clean,
+        analytics.fuzzy_similarity(
+            s.source_client_clean, r.client_name_clean
+        ) AS similarity_score
+    FROM source_value s
+    CROSS JOIN master_reference r
+    WHERE NOT EXISTS (
+        SELECT 1 FROM master_reference exact_match
+        WHERE s.source_client_clean IN (
+            exact_match.client_code_clean,
+            exact_match.client_name_clean
+        )
+    )
+),
+ranked AS (
+    SELECT scored.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY source_client_clean
+            ORDER BY similarity_score DESC, client_name_clean
+        ) AS candidate_rank,
+        LEAD(similarity_score) OVER (
+            PARTITION BY source_client_clean
+            ORDER BY similarity_score DESC, client_name_clean
+        ) AS second_best_score
+    FROM scored
+)
+SELECT source_client_clean, client_code_clean, client_name_clean,
+    similarity_score, second_best_score,
+    similarity_score - COALESCE(second_best_score, 0) AS score_margin,
+    similarity_score >= 0.90
+      AND similarity_score - COALESCE(second_best_score, 0) >= 0.08
+FROM ranked
+WHERE candidate_rank = 1;
+
 -- Clean view utama. Setiap baris sumber tetap dipertahankan.
 CREATE OR REPLACE VIEW analytics.item_journey_clean AS
 WITH normalized AS (
@@ -140,6 +268,13 @@ master_status AS (
     FROM master.t_mtr_status s
     WHERE analytics.clean_code(s.status_name) IS NOT NULL
 ),
+master_location_reference AS (
+    SELECT DISTINCT
+        analytics.clean_code(l.location_code) AS location_code_clean,
+        analytics.clean_code(l.location_name) AS location_name_clean
+    FROM master.t_mtr_location l
+    WHERE analytics.clean_code(l.location_name) IS NOT NULL
+),
 master_location AS (
     -- Kode maupun nama sumber dipetakan ke satu nama master. Nilai sumber tetap
     -- disimpan di place_clean untuk audit; place_canonical_clean hanya terisi
@@ -151,26 +286,54 @@ master_location AS (
         COUNT(DISTINCT location_name_clean) AS location_name_count
     FROM (
         SELECT
-            analytics.clean_code(l.location_code) AS location_code_clean,
-            analytics.clean_code(l.location_name) AS location_name_clean,
+            l.location_code_clean,
+            l.location_name_clean,
             value.location_value_clean
-        FROM master.t_mtr_location l
+        FROM master_location_reference l
         CROSS JOIN LATERAL (VALUES
-            (analytics.clean_code(l.location_code)),
-            (analytics.clean_code(l.location_name))
+            (l.location_code_clean),
+            (l.location_name_clean)
         ) value(location_value_clean)
         WHERE value.location_value_clean IS NOT NULL
     ) location_value
     GROUP BY location_value_clean
 ),
-master_client AS (
-    SELECT DISTINCT client_value_clean
+verified_location_alias AS (
+    -- Alias ini diterima berdasarkan konteks: 5.096 dari 5.611 item pada
+    -- GUDANG NUTECH juga memiliki histori GUDANG NI dan alur gudangnya sama.
+    SELECT v.source_location_clean, r.location_code_clean,
+        r.location_name_clean, v.mapping_basis
+    FROM (VALUES
+        ('GUDANG NUTECH'::text, '000'::text,
+         'VERIFIED_ITEM_OVERLAP_AND_WAREHOUSE_FLOW'::text)
+    ) v(source_location_clean, target_location_code_clean, mapping_basis)
+    JOIN master_location_reference r
+      ON r.location_code_clean = v.target_location_code_clean
+),
+location_fuzzy_best AS (
+    SELECT * FROM analytics.location_fuzzy_match_cache
+),
+master_client_reference AS (
+    SELECT DISTINCT analytics.clean_name(c.client_code) AS client_code_clean,
+        analytics.clean_name(c.client_name) AS client_name_clean
     FROM master.t_mtr_client c
+    WHERE analytics.clean_name(c.client_name) IS NOT NULL
+),
+master_client AS (
+    SELECT client_value_clean,
+        MIN(client_code_clean) AS client_code_clean,
+        MIN(client_name_clean) AS client_name_clean,
+        COUNT(DISTINCT client_name_clean) AS client_name_count
+    FROM master_client_reference c
     CROSS JOIN LATERAL (VALUES
-        (analytics.clean_name(c.client_code)),
-        (analytics.clean_name(c.client_name))
+        (c.client_code_clean),
+        (c.client_name_clean)
     ) value(client_value_clean)
     WHERE client_value_clean IS NOT NULL
+    GROUP BY client_value_clean
+),
+client_fuzzy_best AS (
+    SELECT * FROM analytics.client_fuzzy_match_cache
 )
 SELECT
     c.journey_id,
@@ -250,7 +413,11 @@ SELECT
     c.status_clean IS NULL
         OR ms.status_clean IS NOT NULL AS is_status_found,
     c.place_clean IS NULL
-        OR ml.location_value_clean IS NOT NULL AS is_place_found,
+        OR CASE
+            WHEN ml.location_name_count = 1 THEN ml.location_name_clean
+            WHEN vla.source_location_clean IS NOT NULL THEN vla.location_name_clean
+            WHEN lfb.is_auto_accepted THEN lfb.location_name_clean
+        END IS NOT NULL AS is_place_found,
     c.is_duplicate_journey_id,
     CASE
         WHEN c.journey_id IS NULL OR c.is_duplicate_journey_id THEN 'CRITICAL'
@@ -261,8 +428,22 @@ SELECT
           OR c.created_on::date < DATE '1971-01-01'
           OR c.created_on > CURRENT_TIMESTAMP
           OR (c.status_clean IS NOT NULL AND ms.status_clean IS NULL)
-          OR (c.place_clean IS NOT NULL AND ml.location_value_clean IS NULL)
-          OR (c.client_clean IS NOT NULL AND mc.client_value_clean IS NULL)
+          OR (
+              c.place_clean IS NOT NULL
+              AND CASE
+                  WHEN ml.location_name_count = 1 THEN ml.location_name_clean
+                  WHEN vla.source_location_clean IS NOT NULL
+                      THEN vla.location_name_clean
+                  WHEN lfb.is_auto_accepted THEN lfb.location_name_clean
+              END IS NULL
+          )
+          OR (
+              c.client_clean IS NOT NULL
+              AND CASE
+                  WHEN mc.client_name_count = 1 THEN mc.client_name_clean
+                  WHEN cfb.is_auto_accepted THEN cfb.client_name_clean
+              END IS NULL
+          )
           OR (c.wo_type_clean IS NOT NULL AND journey_wt.work_type_value_clean IS NULL)
           OR (
               c.wo_type_clean IS NOT NULL
@@ -276,7 +457,10 @@ SELECT
         ELSE 'OK'
     END AS data_quality_status,
     c.client_clean IS NULL
-        OR mc.client_value_clean IS NOT NULL AS is_client_found,
+        OR CASE
+            WHEN mc.client_name_count = 1 THEN mc.client_name_clean
+            WHEN cfb.is_auto_accepted THEN cfb.client_name_clean
+        END IS NOT NULL AS is_client_found,
     c.wo_type_clean IS NULL
         OR journey_wt.work_type_value_clean IS NOT NULL AS is_work_type_found,
     c.item_identifier_clean,
@@ -302,13 +486,78 @@ SELECT
         THEN FALSE
         ELSE journey_wt.work_type_code_clean = wo.work_type_code_clean
     END AS is_work_type_consistent,
-    ml.location_code_clean AS place_master_code_clean,
-    ml.location_name_clean AS place_master_name_clean,
+    CASE
+        WHEN ml.location_name_count = 1 THEN ml.location_code_clean
+        WHEN vla.source_location_clean IS NOT NULL THEN vla.location_code_clean
+        WHEN lfb.is_auto_accepted THEN lfb.location_code_clean
+    END AS place_master_code_clean,
     CASE
         WHEN ml.location_name_count = 1 THEN ml.location_name_clean
-        ELSE NULL
+        WHEN vla.source_location_clean IS NOT NULL THEN vla.location_name_clean
+        WHEN lfb.is_auto_accepted THEN lfb.location_name_clean
+    END AS place_master_name_clean,
+    CASE
+        WHEN ml.location_name_count = 1 THEN ml.location_name_clean
+        WHEN vla.source_location_clean IS NOT NULL THEN vla.location_name_clean
+        WHEN lfb.is_auto_accepted THEN lfb.location_name_clean
     END AS place_canonical_clean,
-    ml.location_name_count > 1 AS is_place_mapping_ambiguous
+    COALESCE(ml.location_name_count > 1, FALSE)
+      OR COALESCE(
+          NOT lfb.is_auto_accepted AND lfb.score_margin < 0.08,
+          FALSE
+      ) AS is_place_mapping_ambiguous,
+    CASE
+        WHEN c.place_clean IS NULL THEN 'MISSING'
+        WHEN ml.location_name_count = 1 THEN 'EXACT'
+        WHEN ml.location_name_count > 1 THEN 'AMBIGUOUS_EXACT'
+        WHEN vla.source_location_clean IS NOT NULL THEN 'VERIFIED_CONTEXT_ALIAS'
+        WHEN lfb.is_auto_accepted THEN 'FUZZY_AUTO_ACCEPTED'
+        WHEN lfb.source_location_clean IS NOT NULL THEN 'FUZZY_REVIEW'
+        ELSE 'UNMATCHED'
+    END AS place_mapping_method,
+    COALESCE(
+        CASE WHEN ml.location_name_count = 1 THEN 1.0::numeric END,
+        CASE WHEN vla.source_location_clean IS NOT NULL
+            THEN analytics.fuzzy_similarity(c.place_clean, vla.location_name_clean) END,
+        lfb.similarity_score
+    ) AS place_fuzzy_score,
+    lfb.score_margin AS place_fuzzy_margin,
+    COALESCE(lfb.is_auto_accepted, FALSE) AS is_place_fuzzy_accepted,
+    CASE
+        WHEN mc.client_name_count = 1 THEN mc.client_code_clean
+        WHEN cfb.is_auto_accepted THEN cfb.client_code_clean
+    END AS client_master_code_clean,
+    CASE
+        WHEN mc.client_name_count = 1 THEN mc.client_name_clean
+        WHEN cfb.is_auto_accepted THEN cfb.client_name_clean
+    END AS client_master_name_clean,
+    CASE
+        WHEN mc.client_name_count = 1 THEN mc.client_name_clean
+        WHEN cfb.is_auto_accepted THEN cfb.client_name_clean
+    END AS client_canonical_clean,
+    CASE
+        WHEN c.client_clean IS NULL THEN 'MISSING'
+        WHEN mc.client_name_count = 1 THEN 'EXACT'
+        WHEN mc.client_name_count > 1 THEN 'AMBIGUOUS_EXACT'
+        WHEN cfb.is_auto_accepted THEN 'FUZZY_AUTO_ACCEPTED'
+        WHEN cfb.source_client_clean IS NOT NULL THEN 'FUZZY_REVIEW'
+        ELSE 'UNMATCHED'
+    END AS client_mapping_method,
+    COALESCE(
+        CASE WHEN mc.client_name_count = 1 THEN 1.0::numeric END,
+        cfb.similarity_score
+    ) AS client_fuzzy_score,
+    cfb.score_margin AS client_fuzzy_margin,
+    COALESCE(cfb.is_auto_accepted, FALSE) AS is_client_fuzzy_accepted,
+    COALESCE(mc.client_name_count > 1, FALSE)
+      OR COALESCE(
+          NOT cfb.is_auto_accepted AND cfb.score_margin < 0.08,
+          FALSE
+      ) AS is_client_mapping_ambiguous,
+    lfb.location_code_clean AS place_fuzzy_candidate_code_clean,
+    lfb.location_name_clean AS place_fuzzy_candidate_name_clean,
+    cfb.client_code_clean AS client_fuzzy_candidate_code_clean,
+    cfb.client_name_clean AS client_fuzzy_candidate_name_clean
 FROM cleaned c
 LEFT JOIN master_item mi
     ON mi.item_model_code_clean = c.item_model_code_clean
@@ -324,8 +573,14 @@ LEFT JOIN master_status ms
     ON ms.status_clean = c.status_clean
 LEFT JOIN master_location ml
     ON ml.location_value_clean = c.place_clean
+LEFT JOIN verified_location_alias vla
+    ON vla.source_location_clean = c.place_clean
+LEFT JOIN location_fuzzy_best lfb
+    ON lfb.source_location_clean = c.place_clean
 LEFT JOIN master_client mc
     ON mc.client_value_clean = c.client_clean
+LEFT JOIN client_fuzzy_best cfb
+    ON cfb.source_client_clean = c.client_clean
 LEFT JOIN master_work_type journey_wt
     ON journey_wt.work_type_value_clean = c.wo_type_clean;
 

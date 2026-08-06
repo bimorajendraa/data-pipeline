@@ -24,9 +24,11 @@ Keputusan bisnis sudah dikonfirmasi dan label event disediakan melalui
   `journey=INSTALLATION` dan `work_order=RECON`. Pola ini kemungkinan merupakan
   tahap pemasangan dalam pekerjaan recon, bukan kesalahan data. Jangan keluarkan
   record ini sebelum ada konfirmasi proses bisnis.
-- Client yang tidak cocok master berjumlah 58.645 journey dan lokasi yang tidak
-  cocok master berjumlah 8.582 journey. Keduanya tidak menghalangi label waktu
-  kerusakan, tetapi belum aman dijadikan fitur kategorikal tanpa mapping.
+- Seluruh 58.645 journey dengan typo client `KERETE COMMUTER INDONESIA (KCI)`
+  sudah dipetakan ke nama master melalui fuzzy matching dengan skor dan margin
+  aman. Sebanyak 8.567 event `GUDANG NUTECH` juga sudah dipetakan secara
+  kontekstual ke `GUDANG NI`. Hanya 15 event `NOC JUANDA` yang tetap ditahan
+  untuk review dan tidak digunakan sebagai fitur lokasi.
 
 ## Kandidat titik awal kerusakan
 
@@ -85,8 +87,10 @@ Record yang sementara dikeluarkan dari dataset temporal:
 - tanggal masa depan;
 - model item tidak konsisten, sampai mapping selesai.
 
-Client dan lokasi tetap dipertahankan sebagai informasi audit, tetapi belum
-digunakan sebagai fitur sampai nilai yang tidak cocok master ditangani.
+Nilai client/lokasi mentah tetap dipertahankan untuk audit. Nama canonical yang
+sudah lolos exact match, fuzzy aman, atau alias kontekstual boleh diuji sebagai
+fitur; 15 event `NOC JUANDA` tetap tidak digunakan sebagai fitur lokasi sampai
+review manual selesai.
 
 ## Keputusan bisnis terkonfirmasi
 

@@ -43,6 +43,10 @@ classified AS (
         woc.work_order_type_clean,
         f.journey_id IS NOT NULL AS is_confirmed_failure_onset,
         f.event_label_basis AS confirmed_failure_basis,
+        COUNT(*) OVER (
+            PARTITION BY e.created_on::date, e.status_clean,
+                e.activity_clean, e.place_clean
+        ) >= 100 AS is_bulk_activity_context,
         (
             COALESCE(e.wo_type_clean = 'RECON', FALSE)
             OR COALESCE(woc.work_order_type_clean = 'RECON', FALSE)
@@ -83,6 +87,12 @@ SELECT
     END AS data_era,
     CASE
         WHEN c.is_admin_recon_context THEN 'ADMIN_RECON'
+        WHEN c.status_clean = 'OK'
+          AND c.activity_clean = 'RECEPTION'
+          AND c.is_bulk_activity_context
+            THEN 'BULK_WAREHOUSE_RECEPTION'
+        WHEN c.status_clean = 'OK' AND c.activity_clean = 'RECEPTION'
+            THEN 'WAREHOUSE_RECEPTION'
         WHEN c.is_confirmed_failure_onset
             THEN 'FAILURE_ONSET'
         WHEN c.status_clean = 'DISMANTLED' AND c.wo_type_clean = 'DISMANTLE'

@@ -14,6 +14,13 @@ BEGIN
     EXECUTE 'DROP VIEW IF EXISTS analytics.eda_incomplete_failure_summary';
     EXECUTE 'DROP VIEW IF EXISTS analytics.eda_incomplete_failure_detail';
     EXECUTE 'DROP VIEW IF EXISTS analytics.failure_outcome_missing_onset_review';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_location_lifecycle_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_location_lifecycle_detail';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_daily_activity_anomaly';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_item_location_installation_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_activity_calendar_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_location_activity_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_item_activity_summary';
 
     -- Objek EDA tahap 11-13 bergantung pada failure/timeline cache. Hapus
     -- terlebih dahulu agar pipeline lengkap tetap idempotent saat dijalankan ulang.
@@ -86,13 +93,25 @@ SELECT
     item_pairing_code_clean,
     host_serial_code_clean,
     item_identifier_clean,
-    client_clean,
+    client_clean AS client_source_clean,
+    client_canonical_clean AS client_clean,
+    client_master_code_clean,
+    client_master_name_clean,
+    client_mapping_method,
+    client_fuzzy_score,
+    client_fuzzy_margin,
+    is_client_fuzzy_accepted,
+    is_client_mapping_ambiguous,
     place_clean,
     place_master_code_clean,
     place_master_name_clean,
     place_canonical_clean,
     is_place_found,
     is_place_mapping_ambiguous,
+    place_mapping_method,
+    place_fuzzy_score,
+    place_fuzzy_margin,
+    is_place_fuzzy_accepted,
     wo_type_clean,
     wo_code_clean,
     activity_clean,

@@ -7,6 +7,7 @@ DROP VIEW IF EXISTS analytics.eda_item_location_installation_summary;
 DROP VIEW IF EXISTS analytics.eda_activity_calendar_summary;
 DROP VIEW IF EXISTS analytics.eda_location_activity_summary;
 DROP VIEW IF EXISTS analytics.eda_item_activity_summary;
+DROP VIEW IF EXISTS analytics.eda_fuzzy_mapping_review;
 DROP VIEW IF EXISTS analytics.eda_cleaning_review_detail;
 DROP VIEW IF EXISTS analytics.eda_journey_quality_summary;
 
@@ -60,23 +61,29 @@ SELECT * FROM (
         )::bigint,
         'Lokasi terisi tetapi tidak dapat dipetakan ke master'
         FROM analytics.item_journey_clean
-    UNION ALL SELECT 8, 'MISSING_STATUS',
+    UNION ALL SELECT 8, 'CLIENT_NOT_IN_MASTER',
+        COUNT(*) FILTER (
+            WHERE client_clean IS NOT NULL AND client_canonical_clean IS NULL
+        )::bigint,
+        'Klien terisi tetapi tidak dapat dipetakan ke master'
+        FROM analytics.item_journey_clean
+    UNION ALL SELECT 9, 'MISSING_STATUS',
         COUNT(*) FILTER (WHERE status_clean IS NULL)::bigint,
         'Status journey kosong' FROM analytics.item_journey_clean
-    UNION ALL SELECT 9, 'MISSING_DATE',
+    UNION ALL SELECT 10, 'MISSING_DATE',
         COUNT(*) FILTER (WHERE created_on IS NULL)::bigint,
         'Tanggal journey kosong' FROM analytics.item_journey_clean
-    UNION ALL SELECT 10, 'INVALID_OR_FUTURE_DATE',
+    UNION ALL SELECT 11, 'INVALID_OR_FUTURE_DATE',
         COUNT(*) FILTER (WHERE NOT is_valid_date OR is_future_date)::bigint,
         'Tanggal terlalu lama, invalid, atau melewati waktu ekstraksi'
         FROM analytics.item_journey_clean
-    UNION ALL SELECT 11, 'DUPLICATE_JOURNEY_ID',
+    UNION ALL SELECT 12, 'DUPLICATE_JOURNEY_ID',
         COUNT(*) FILTER (WHERE is_duplicate_journey_id)::bigint,
         'journey_id tercatat lebih dari satu kali' FROM analytics.item_journey_clean
-    UNION ALL SELECT 12, 'EXACT_LOG_DUPLICATE_EXTRA_ROWS', extra_rows,
+    UNION ALL SELECT 13, 'EXACT_LOG_DUPLICATE_EXTRA_ROWS', extra_rows,
         'Baris tambahan setelah seluruh isi bisnis log dibandingkan'
         FROM exact_duplicate
-    UNION ALL SELECT 13, 'CREATED_ON_NOT_DATETIME', invalid_type_count,
+    UNION ALL SELECT 14, 'CREATED_ON_NOT_DATETIME', invalid_type_count,
         'Kolom created_on sumber bukan tipe date/timestamp' FROM source_type
 ) checks;
 
@@ -102,6 +109,8 @@ SELECT journey_id, item_identifier_clean, item_model_code_clean,
             THEN 'INVALID_OR_FUTURE_DATE' END,
         CASE WHEN place_clean IS NOT NULL AND place_canonical_clean IS NULL
             THEN 'LOCATION_NOT_IN_MASTER' END,
+        CASE WHEN client_clean IS NOT NULL AND client_canonical_clean IS NULL
+            THEN 'CLIENT_NOT_IN_MASTER' END,
         CASE WHEN is_item_model_consistent IS NOT TRUE
             THEN 'JOURNEY_MODEL_INCONSISTENT' END,
         CASE WHEN is_duplicate_journey_id THEN 'DUPLICATE_JOURNEY_ID' END,
@@ -120,6 +129,8 @@ SELECT journey_id, item_identifier_clean, item_model_code_clean,
             THEN 'REVIEW_BEFORE_DEDUPLICATION'
         WHEN place_clean IS NOT NULL AND place_canonical_clean IS NULL
             THEN 'KEEP_EVENT_EXCLUDE_LOCATION_FEATURE'
+        WHEN client_clean IS NOT NULL AND client_canonical_clean IS NULL
+            THEN 'KEEP_EVENT_EXCLUDE_CLIENT_FEATURE'
         ELSE 'REVIEW'
     END AS suggested_action
 FROM flagged
@@ -129,9 +140,37 @@ WHERE is_missing_item_identifier
    OR NOT is_valid_date
    OR is_future_date
    OR (place_clean IS NOT NULL AND place_canonical_clean IS NULL)
+   OR (client_clean IS NOT NULL AND client_canonical_clean IS NULL)
    OR is_item_model_consistent IS NOT TRUE
    OR is_duplicate_journey_id
    OR is_exact_duplicate_content;
+
+CREATE OR REPLACE VIEW analytics.eda_fuzzy_mapping_review AS
+SELECT 'LOCATION'::text AS mapping_type,
+    place_clean AS source_value,
+    place_canonical_clean AS canonical_value,
+    COALESCE(place_fuzzy_candidate_name_clean, place_master_name_clean)
+        AS best_candidate,
+    place_mapping_method AS mapping_method,
+    place_fuzzy_score AS similarity_score,
+    place_fuzzy_margin AS score_margin,
+    COUNT(*) AS event_count,
+    COUNT(DISTINCT item_identifier_clean) AS item_count
+FROM analytics.item_journey_clean
+WHERE place_clean IS NOT NULL AND place_mapping_method <> 'EXACT'
+GROUP BY place_clean, place_canonical_clean,
+    COALESCE(place_fuzzy_candidate_name_clean, place_master_name_clean),
+    place_mapping_method, place_fuzzy_score, place_fuzzy_margin
+UNION ALL
+SELECT 'CLIENT', client_clean, client_canonical_clean,
+    COALESCE(client_fuzzy_candidate_name_clean, client_master_name_clean),
+    client_mapping_method, client_fuzzy_score, client_fuzzy_margin,
+    COUNT(*), COUNT(DISTINCT item_identifier_clean)
+FROM analytics.item_journey_clean
+WHERE client_clean IS NOT NULL AND client_mapping_method <> 'EXACT'
+GROUP BY client_clean, client_canonical_clean,
+    COALESCE(client_fuzzy_candidate_name_clean, client_master_name_clean),
+    client_mapping_method, client_fuzzy_score, client_fuzzy_margin;
 
 CREATE OR REPLACE VIEW analytics.eda_item_activity_summary AS
 SELECT item_category_clean, item_model_code_clean,
@@ -253,7 +292,10 @@ WITH daily AS (
         COUNT(*) AS event_count,
         COUNT(*) FILTER (WHERE status_clean = 'INSTALLED') AS installation_count,
         COUNT(*) FILTER (WHERE status_clean = 'DISMANTLED') AS dismantle_count,
-        COUNT(*) FILTER (WHERE is_admin_recon_context) AS admin_recon_count
+        COUNT(*) FILTER (WHERE is_admin_recon_context) AS admin_recon_count,
+        COUNT(*) FILTER (
+            WHERE event_semantic = 'BULK_WAREHOUSE_RECEPTION'
+        ) AS bulk_warehouse_reception_count
     FROM analytics.item_journey_semantic
     WHERE is_valid_operational_date
     GROUP BY created_on::date
@@ -269,6 +311,8 @@ FROM daily d
 CROSS JOIN boundary b;
 
 SELECT * FROM analytics.eda_journey_quality_summary ORDER BY check_order;
+SELECT * FROM analytics.eda_fuzzy_mapping_review
+ORDER BY mapping_type, event_count DESC;
 SELECT suggested_action, COUNT(*) FROM analytics.eda_cleaning_review_detail
 GROUP BY suggested_action ORDER BY 2 DESC;
 SELECT * FROM analytics.eda_item_activity_summary ORDER BY event_count DESC LIMIT 20;

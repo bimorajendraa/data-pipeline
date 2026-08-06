@@ -39,7 +39,7 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `sql/10_operational_timeline.sql` | Memisahkan event operasional dari RECON administratif dan mengonfirmasi flow failure | `analytics.item_journey_semantic`, `analytics.item_journey_operational_timeline`, `analytics.failure_event_flow` |
 | `sql/11_item_installation_cycle.sql` | Membentuk siklus dari INSTALLED tepercaya sampai failure/reinstall/censoring | `analytics.item_installation_cycle` |
 | `sql/12_item_observation_dataset.sql` | Membentuk snapshot 30-harian, fitur historis, target 30 hari, dan flag observability | `analytics.item_observation_30d` |
-| `sql/13_eda_summary.sql` | Membuat metrik readiness, tren target, missingness, dan refresh dependency | Tiga view ringkasan EDA |
+| `sql/13_eda_summary.sql` | Membuat metrik readiness, distribusi target, cakupan master, missingness, kestabilan fitur bulanan, dan refresh dependency | View ringkasan EDA serta materialized summary drift |
 | `sql/14_extended_eda.sql` | Membandingkan cadence dan unit analisis, mengelompokkan follow-up yang belum lengkap, serta merangkum outlier | View pemeriksaan EDA lanjutan dan cache perbandingan snapshot |
 | `sql/15_comprehensive_eda.sql` | Melengkapi audit kualitas journal, univariat, hubungan item-lokasi/waktu, lifecycle satu lokasi, dan lonjakan aktivitas | View EDA komprehensif yang dapat dipakai ulang oleh notebook |
 | `notebooks/01_failure_eda.ipynb` | EDA interaktif tanpa memuat seluruh dataset detail ke memori | Tabel, grafik, pemeriksaan leakage, dan usulan time split |
@@ -55,6 +55,26 @@ ditelusuri. Record yang gagal validasi tidak dihapus.
 Underscore pada nama petugas/client hanya digunakan untuk menyusun kandidat
 standardisasi di hasil profiling; clean view tidak menggabungkan nama tersebut
 secara otomatis.
+
+### Pencocokan lokasi dan client
+
+Pencocokan selalu mendahulukan kode atau nama yang sama persis dengan master.
+Fuzzy matching baru dijalankan untuk nilai yang belum cocok. Kandidat hanya
+diterima otomatis apabila kemiripan minimal 90% dan unggul minimal 8 poin dari
+kandidat kedua. Nama sumber, kandidat, skor, margin, dan metode mapping tetap
+disimpan agar keputusan dapat diaudit.
+
+- `KERETE COMMUTER INDONESIA (KCI)` diterima sebagai typo dari
+  `KERETA COMMUTER INDONESIA (KCI)` karena melewati kedua batas aman.
+- `GUDANG NUTECH` dipetakan ke `GUDANG NI` sebagai alias kontekstual yang sudah
+  diverifikasi dari tumpang-tindih item dan alur aktivitas gudang; keputusan ini
+  bukan semata-mata berdasarkan kemiripan tulisan.
+- `NOC JUANDA` tidak dipetakan otomatis karena kandidat lokasi Juanda terlalu
+  berdekatan. Event tetap tersedia, tetapi fitur lokasinya ditahan untuk review.
+
+Perhitungan Levenshtein dilakukan satu kali untuk setiap nilai unik dan disimpan
+di cache schema `analytics`, sehingga pembacaan view dan laporan tidak perlu
+menghitung ulang kemiripan untuk setiap event.
 
 ## Mapping yang diverifikasi dari backup
 
@@ -203,8 +223,13 @@ analytics.item_journey_operational_timeline
 ```text
 FAILURE_ONSET, RELOCATION, ADMIN_RECON, REPAIR_PROCESS,
 FAILURE_OUTCOME, REPAIR_COMPLETED, RETURN_FLOW,
-PREVENTIVE, NORMAL_OPERATION
+PREVENTIVE, WAREHOUSE_RECEPTION, BULK_WAREHOUSE_RECEPTION,
+NORMAL_OPERATION
 ```
+
+`BULK_WAREHOUSE_RECEPTION` adalah penerimaan barang gudang dalam jumlah besar.
+Semantic ini tetap disimpan sebagai event operasional, tetapi bukan installation,
+dismantle, atau failure. Contoh utamanya adalah 4.011 event pada 3 Juli 2024.
 
 `analytics.failure_event_flow` memeriksa flow setelah failure onset. RETURN
 merupakan flow yang diharapkan, tetapi ketiadaan RETURN tidak mengubah event
@@ -242,9 +267,15 @@ lokasi yang tidak cocok atau ambigu tetap dipertahankan untuk audit, tetapi
 `is_location_feature_eligible = FALSE` dan tidak dipakai pada grafik lokasi.
 
 Notebook membandingkan era lama dan era detail repair, target imbalance,
-missingness, umur sampai failure, model dengan dukungan sampel minimum, fitur
-failure/nonfailure, dan split waktu. Rekomendasi awal split adalah train sampai
-2024, validation 2025, dan test 2026; keputusan final tetap mengikuti hasil EDA.
+missingness beserta strategi penanganan, umur sampai failure, model dengan
+dukungan sampel minimum, fitur failure/nonfailure, serta split waktu. EDA juga
+menampilkan matriks Pearson dan Spearman, pasangan fitur redundan, screening
+Information Value (IV), cakupan master lokasi/client pada level snapshot, tren
+fitur bulanan, dan Population Stability Index (PSI) terhadap referensi 2024.
+IV hanya screening univariat, sedangkan PSI hanya indikator drift; keduanya tidak
+menggantikan validasi model secara temporal. Rekomendasi awal split adalah train
+sampai 2024, validation 2025, dan test 2026; keputusan final tetap mengikuti
+hasil EDA.
 
 Runner hanya menerima `DB_NAME=OMEXP`. Runner juga menolak DDL database serta
 SQL yang berisi `UPDATE`, `DELETE`, `INSERT`, `TRUNCATE`,
