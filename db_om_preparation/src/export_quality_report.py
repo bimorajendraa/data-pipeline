@@ -50,7 +50,7 @@ def main() -> int:
                             [csv_value(value) for value in row]
                             for row in cursor.fetchall()
                         )
-                    print(f"[OK] {output_path}")
+                    print(f"Sudah berhasil terdownload {output_path}")
         return 0
     except Exception as exc:
         print(f"[ERROR] Ekspor gagal: {exc}", file=sys.stderr)

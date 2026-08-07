@@ -12525,13 +12525,805 @@ berapa kali satu failure muncul sebagai peringatan positif.</p>
 </div>
 </div>
 </div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=chapter-9-bivariate-multivariate">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="9.-Hierarki-PART-TERMINAL,-analisis-bivariat,-dan-multivariat">9. Hierarki PART-TERMINAL, analisis bivariat, dan multivariat<a class="anchor-link" href="#9.-Hierarki-PART-TERMINAL,-analisis-bivariat,-dan-multivariat">¶</a></h2><p><strong>Pertanyaan:</strong> apakah PART terhubung dengan TERMINAL, apakah konteks terminal berasosiasi dengan failure PART, dan apakah asosiasi tersebut tetap terlihat setelah karakteristik PART dikontrol?</p>
+<p>Relasi bersifat <strong>many-to-one pada satu installation cycle</strong> dan dapat menjadi many-to-many sepanjang histori karena PART dapat berpindah terminal. Mapping menggunakan <code>host_serial_code + wo_code</code> installation ke <code>t_item_request_out</code>, lalu <code>parent_serial_code</code> menjadi identitas TERMINAL. Timestamp pencatatan link tetap diaudit karena relasi historis lama dapat merupakan backfill.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=chapter-9-1-bivariate">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h3 id="9.1-Struktur-relasi-dan-analisis-bivariat">9.1 Struktur relasi dan analisis bivariat<a class="anchor-link" href="#9.1-Struktur-relasi-dan-analisis-bivariat">¶</a></h3><p>Bivariat membandingkan satu fitur dengan target tanpa adjustment. Positive rate, risk ratio, Wilson 95%, minimum support, dan Cramér's V dilaporkan bersama. Hasil ini adalah asosiasi prediktif, bukan sebab-akibat.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=part-terminal-bivariate">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [20]:</div>
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">hierarchy_summary</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s1">'SELECT * FROM analytics.eda_part_terminal_structure_summary ORDER BY metric'</span><span class="p">)</span>
+<span class="n">hierarchy_summary</span><span class="p">[</span><span class="s1">'value'</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">hierarchy_summary</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s1">'coerce'</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">hierarchy_summary</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'metric'</span><span class="p">:</span><span class="s1">'Metrik relasi'</span><span class="p">,</span><span class="s1">'value'</span><span class="p">:</span><span class="s1">'Jumlah'</span><span class="p">,</span><span class="s1">'interpretation'</span><span class="p">:</span><span class="s1">'Interpretasi'</span><span class="p">}))</span>
+<span class="n">association_summary</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s1">'SELECT * FROM analytics.eda_bivariate_association_summary ORDER BY association'</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'chi_square'</span><span class="p">,</span><span class="s1">'cramers_v'</span><span class="p">,</span><span class="s1">'observation_count'</span><span class="p">]:</span> <span class="n">association_summary</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">association_summary</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s1">'coerce'</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">association_summary</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'association'</span><span class="p">:</span><span class="s1">'Hubungan'</span><span class="p">,</span><span class="s1">'chi_square'</span><span class="p">:</span><span class="s1">'Chi-square'</span><span class="p">,</span><span class="s1">'cramers_v'</span><span class="p">:</span><span class="s2">"Cramér's V"</span><span class="p">,</span><span class="s1">'observation_count'</span><span class="p">:</span><span class="s1">'N'</span><span class="p">,</span><span class="s1">'interpretation'</span><span class="p">:</span><span class="s1">'Interpretasi'</span><span class="p">}))</span>
+<span class="n">terminal_type_risk</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s1">'SELECT * FROM analytics.eda_bivariate_terminal_type_target ORDER BY positive_percentage DESC'</span><span class="p">)</span>
+<span class="n">terminal_model_risk</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s1">'SELECT * FROM analytics.eda_bivariate_terminal_model_target WHERE meets_minimum_support ORDER BY positive_percentage DESC'</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">frame</span> <span class="ow">in</span> <span class="p">[</span><span class="n">terminal_type_risk</span><span class="p">,</span> <span class="n">terminal_model_risk</span><span class="p">]:</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'snapshot_count'</span><span class="p">,</span><span class="s1">'part_count'</span><span class="p">,</span><span class="s1">'terminal_count'</span><span class="p">,</span><span class="s1">'positive_count'</span><span class="p">,</span><span class="s1">'positive_percentage'</span><span class="p">,</span><span class="s1">'risk_ratio_to_overall'</span><span class="p">]:</span>
+        <span class="n">frame</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">frame</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s1">'coerce'</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">terminal_type_risk</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'terminal_type'</span><span class="p">:</span><span class="s1">'Tipe TERMINAL'</span><span class="p">,</span><span class="s1">'snapshot_count'</span><span class="p">:</span><span class="s1">'Snapshot'</span><span class="p">,</span><span class="s1">'part_count'</span><span class="p">:</span><span class="s1">'PART'</span><span class="p">,</span><span class="s1">'terminal_count'</span><span class="p">:</span><span class="s1">'TERMINAL'</span><span class="p">,</span><span class="s1">'positive_count'</span><span class="p">:</span><span class="s1">'Positif'</span><span class="p">,</span><span class="s1">'positive_percentage'</span><span class="p">:</span><span class="s1">'Positive rate (%)'</span><span class="p">,</span><span class="s1">'risk_ratio_to_overall'</span><span class="p">:</span><span class="s1">'Risk ratio vs overall'</span><span class="p">,</span><span class="s1">'wilson_lower_95_pct'</span><span class="p">:</span><span class="s1">'Wilson lower 95%'</span><span class="p">,</span><span class="s1">'wilson_upper_95_pct'</span><span class="p">:</span><span class="s1">'Wilson upper 95%'</span><span class="p">,</span><span class="s1">'meets_minimum_support'</span><span class="p">:</span><span class="s1">'Minimum support'</span><span class="p">}))</span>
+<span class="n">display</span><span class="p">(</span><span class="n">terminal_model_risk</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'terminal_model_code'</span><span class="p">:</span><span class="s1">'Model TERMINAL'</span><span class="p">,</span><span class="s1">'terminal_type'</span><span class="p">:</span><span class="s1">'Tipe TERMINAL'</span><span class="p">,</span><span class="s1">'snapshot_count'</span><span class="p">:</span><span class="s1">'Snapshot'</span><span class="p">,</span><span class="s1">'part_count'</span><span class="p">:</span><span class="s1">'PART'</span><span class="p">,</span><span class="s1">'terminal_count'</span><span class="p">:</span><span class="s1">'TERMINAL'</span><span class="p">,</span><span class="s1">'positive_count'</span><span class="p">:</span><span class="s1">'Positif'</span><span class="p">,</span><span class="s1">'positive_percentage'</span><span class="p">:</span><span class="s1">'Positive rate (%)'</span><span class="p">,</span><span class="s1">'risk_ratio_to_overall'</span><span class="p">:</span><span class="s1">'Risk ratio vs overall'</span><span class="p">}))</span>
+<span class="n">plot_type</span> <span class="o">=</span> <span class="n">terminal_type_risk</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">terminal_type_risk</span><span class="o">.</span><span class="n">meets_minimum_support</span> <span class="o">&amp;</span> <span class="n">terminal_type_risk</span><span class="o">.</span><span class="n">terminal_type</span><span class="o">.</span><span class="n">ne</span><span class="p">(</span><span class="s1">'UNMAPPED'</span><span class="p">)]</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">'positive_percentage'</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">9</span><span class="p">,</span><span class="mi">4</span><span class="p">));</span> <span class="n">sns</span><span class="o">.</span><span class="n">barplot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">plot_type</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">'terminal_type'</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">'positive_percentage'</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">'darkcyan'</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">positive_row</span><span class="o">.</span><span class="n">class_percentage</span><span class="p">),</span> <span class="n">color</span><span class="o">=</span><span class="s1">'crimson'</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">'--'</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">'Rata-rata seluruh snapshot'</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">'Positive rate failure 30 hari menurut tipe TERMINAL'</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">'Tipe TERMINAL'</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">'Positive rate (%)'</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">xticks</span><span class="p">(</span><span class="n">rotation</span><span class="o">=</span><span class="mi">25</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s1">'right'</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">();</span> <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">();</span> <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">terminal_target_v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">association_summary</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">association_summary</span><span class="o">.</span><span class="n">association</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="s1">'TERMINAL_TYPE_VS_TARGET'</span><span class="p">),</span><span class="s1">'cramers_v'</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="n">part_terminal_v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">association_summary</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">association_summary</span><span class="o">.</span><span class="n">association</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="s1">'PART_MODEL_VS_TERMINAL_TYPE'</span><span class="p">),</span><span class="s1">'cramers_v'</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""**Temuan bivariat:** tipe TERMINAL berasosiasi dengan target dengan Cramér's V **</span><span class="si">{</span><span class="n">terminal_target_v</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">**, sedangkan hubungan model PART dengan tipe TERMINAL jauh lebih kuat, V **</span><span class="si">{</span><span class="n">part_terminal_v</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">**. Karena itu perbedaan rate terminal berpotensi kuat dipengaruhi komposisi model PART dan wajib diuji multivariat."""</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Metrik relasi</th>
+<th>Jumlah</th>
+<th>Interpretasi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>installation_cycles</td>
+<td>24045.0</td>
+<td>Seluruh installation cycle PART</td>
+</tr>
+<tr>
+<th>1</th>
+<td>linked_unique_parts</td>
+<td>19232.0</td>
+<td>PART unik yang mempunyai parent TERMINAL valid...</td>
+</tr>
+<tr>
+<th>2</th>
+<td>linked_unique_terminals</td>
+<td>2315.0</td>
+<td>TERMINAL fisik unik yang menjadi parent pada i...</td>
+</tr>
+<tr>
+<th>3</th>
+<td>parent_link_recorded_after_installation_cycles</td>
+<td>10313.0</td>
+<td>Relasi historis yang dicatat setelah waktu ins...</td>
+</tr>
+<tr>
+<th>4</th>
+<td>training_observations</td>
+<td>1324145.0</td>
+<td>Seluruh snapshot yang layak training</td>
+</tr>
+<tr>
+<th>5</th>
+<td>valid_parent_terminal_cycles</td>
+<td>24008.0</td>
+<td>Cycle dengan parent yang valid di master dan i...</td>
+</tr>
+<tr>
+<th>6</th>
+<td>valid_parent_terminal_training_observations</td>
+<td>1323877.0</td>
+<td>Snapshot training dengan konteks parent TERMIN...</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Hubungan</th>
+<th>Chi-square</th>
+<th>Cramér's V</th>
+<th>N</th>
+<th>Interpretasi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>PART_MODEL_VS_TERMINAL_TYPE</td>
+<td>47800.380214</td>
+<td>0.705517</td>
+<td>24008</td>
+<td>Confounding struktur: nilai tinggi menuntut ad...</td>
+</tr>
+<tr>
+<th>1</th>
+<td>TERMINAL_TYPE_VS_TARGET</td>
+<td>6168.583333</td>
+<td>0.068260</td>
+<td>1323877</td>
+<td>Effect size bivariat; target memiliki dua kelas</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Tipe TERMINAL</th>
+<th>Snapshot</th>
+<th>PART</th>
+<th>TERMINAL</th>
+<th>Positif</th>
+<th>Positive rate (%)</th>
+<th>Risk ratio vs overall</th>
+<th>Wilson lower 95%</th>
+<th>Wilson upper 95%</th>
+<th>Minimum support</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>BALANCE READER</td>
+<td>6451</td>
+<td>208</td>
+<td>190</td>
+<td>314</td>
+<td>4.8675</td>
+<td>10.9687</td>
+<td>4.3687</td>
+<td>5.4200</td>
+<td>True</td>
+</tr>
+<tr>
+<th>1</th>
+<td>UNMAPPED</td>
+<td>268</td>
+<td>18</td>
+<td>0</td>
+<td>5</td>
+<td>1.8657</td>
+<td>4.2043</td>
+<td>0.7995</td>
+<td>4.2923</td>
+<td>False</td>
+</tr>
+<tr>
+<th>2</th>
+<td>CVIM</td>
+<td>217892</td>
+<td>3049</td>
+<td>262</td>
+<td>2537</td>
+<td>1.1643</td>
+<td>2.6238</td>
+<td>1.1201</td>
+<td>1.2103</td>
+<td>True</td>
+</tr>
+<tr>
+<th>3</th>
+<td>VENDING MACHINE</td>
+<td>10157</td>
+<td>454</td>
+<td>80</td>
+<td>65</td>
+<td>0.6400</td>
+<td>1.4421</td>
+<td>0.5024</td>
+<td>0.8148</td>
+<td>True</td>
+</tr>
+<tr>
+<th>4</th>
+<td>POS</td>
+<td>72316</td>
+<td>1123</td>
+<td>309</td>
+<td>229</td>
+<td>0.3167</td>
+<td>0.7136</td>
+<td>0.2783</td>
+<td>0.3603</td>
+<td>True</td>
+</tr>
+<tr>
+<th>5</th>
+<td>GATE</td>
+<td>1017061</td>
+<td>14275</td>
+<td>1469</td>
+<td>2726</td>
+<td>0.2680</td>
+<td>0.6040</td>
+<td>0.2582</td>
+<td>0.2783</td>
+<td>True</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Model TERMINAL</th>
+<th>Tipe TERMINAL</th>
+<th>Snapshot</th>
+<th>PART</th>
+<th>TERMINAL</th>
+<th>Positif</th>
+<th>Positive rate (%)</th>
+<th>Risk ratio vs overall</th>
+<th>meets_minimum_support</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>0312101</td>
+<td>BALANCE READER</td>
+<td>6451</td>
+<td>208</td>
+<td>190</td>
+<td>314</td>
+<td>4.8675</td>
+<td>10.9687</td>
+<td>True</td>
+</tr>
+<tr>
+<th>1</th>
+<td>0110401</td>
+<td>CVIM</td>
+<td>17602</td>
+<td>384</td>
+<td>26</td>
+<td>312</td>
+<td>1.7725</td>
+<td>3.9944</td>
+<td>True</td>
+</tr>
+<tr>
+<th>2</th>
+<td>0110403</td>
+<td>CVIM</td>
+<td>57137</td>
+<td>905</td>
+<td>95</td>
+<td>777</td>
+<td>1.3599</td>
+<td>3.0645</td>
+<td>True</td>
+</tr>
+<tr>
+<th>3</th>
+<td>0110402</td>
+<td>CVIM</td>
+<td>77806</td>
+<td>1203</td>
+<td>68</td>
+<td>916</td>
+<td>1.1773</td>
+<td>2.6530</td>
+<td>True</td>
+</tr>
+<tr>
+<th>4</th>
+<td>0310201</td>
+<td>VENDING MACHINE</td>
+<td>7303</td>
+<td>253</td>
+<td>36</td>
+<td>65</td>
+<td>0.8900</td>
+<td>2.0057</td>
+<td>True</td>
+</tr>
+<tr>
+<th>5</th>
+<td>0110404</td>
+<td>CVIM</td>
+<td>64516</td>
+<td>827</td>
+<td>50</td>
+<td>523</td>
+<td>0.8107</td>
+<td>1.8268</td>
+<td>True</td>
+</tr>
+<tr>
+<th>6</th>
+<td>0310301</td>
+<td>POS</td>
+<td>6212</td>
+<td>197</td>
+<td>36</td>
+<td>30</td>
+<td>0.4829</td>
+<td>1.0883</td>
+<td>True</td>
+</tr>
+<tr>
+<th>7</th>
+<td>0310302</td>
+<td>POS</td>
+<td>65176</td>
+<td>861</td>
+<td>261</td>
+<td>199</td>
+<td>0.3053</td>
+<td>0.6880</td>
+<td>True</td>
+</tr>
+<tr>
+<th>8</th>
+<td>0110501</td>
+<td>GATE</td>
+<td>911930</td>
+<td>10638</td>
+<td>1062</td>
+<td>2568</td>
+<td>0.2816</td>
+<td>0.6346</td>
+<td>True</td>
+</tr>
+<tr>
+<th>9</th>
+<td>1310102</td>
+<td>GATE</td>
+<td>6957</td>
+<td>216</td>
+<td>68</td>
+<td>14</td>
+<td>0.2012</td>
+<td>0.4535</td>
+<td>True</td>
+</tr>
+<tr>
+<th>10</th>
+<td>0510103</td>
+<td>GATE</td>
+<td>82595</td>
+<td>2458</td>
+<td>238</td>
+<td>128</td>
+<td>0.1550</td>
+<td>0.3492</td>
+<td>True</td>
+</tr>
+<tr>
+<th>11</th>
+<td>0510101</td>
+<td>GATE</td>
+<td>14798</td>
+<td>815</td>
+<td>81</td>
+<td>13</td>
+<td>0.0878</td>
+<td>0.1980</td>
+<td>True</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedImage jp-OutputArea-output" tabindex="0">
+<img alt="No description has been provided for this image" class="" src="data:image/png;base64,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WrWqNWjQwDVQggVoyjbwrplAtEybNs11TPkHaEKAhmhYs2aNDRo0yM4//3zXDlQGgQK2ffv2Bd3+t99+4w8RQwRpCW79+vU2ePBgu+iii1xKj5x77rluFE1pPoE0grFx40br0qVLDI4WiTrXzAvITjnlFJfeozSeHj16uKDMn1LNVLChY8eO9uabb9qhQ4didNRIREopU0eB5uKKMgmU8jhz5sxU6T8a2VDD+a233orh0SJRHD582NauXeu+Aivm6Zr3xRdfuPNQWQbffPONvfzyy25ueL9+/bgOIiI01/H222+3K6+80mWx6Fqo72obnnzyyTZq1KhU26u9qM7UXr16uU5+xAbpjgnql19+cQ2N2bNnu56Sa6+9NtVci0mTJrl/AgrKateu7RrS+sfw/fff24gRIygcguOiQGvXrl2uCIjSZ3X+3XXXXbZ//37XSXDeeee5wE09ea+//roVKlTIPU5zMjTCq/lpSkVTWm6nTp34ayAi1BBWB8Bzzz3nepLVYFaBBqX96LqnlB+N4LZo0cKdh5qjAWSWOqFeeOEFN/9bxUB0TdS17tZbb7XrrrvOZaxoDq4azhrN8KhYSLly5dzvFbipIf3000/zh0CGzZo1y3XIq02o81HXuLPPPjvVNpoDPmTIEJs8ebLLLND26ljQ/2Olg+vcRWwQpCWY+fPn20svveQu/PoncMUVV/gawP40QtGuXTvXGNaHUb3H55xzjq1YscIFbEoD0uO1DZBRKt+rRrBGKhRoTZw40c0xU1rZyJEj7T//+Y/rybv33ntdQ0T/FJRq++9//9vq1avnztvbbrvN9Tx//PHHpN8ibDt37nSBvwKsYFVqFXypQfz++++722pA6zw84YQTXMB2ww03uJ5l4Hho9EHzfTTPZ+DAge5/rf7PqkGsToLLLrvMFWkQnY8//PCD69xStoFScb35uO+++66bM6nGNimQyIgBAwa4ETQFWwr0dT2sWbOmPf/886m2U+dp69at7Z9//rEzzjjD/d9u1aoV/3fjQQoSyquvvppy+umnp6xcuTLdbd988023rb4fPXrUd//ixYtTOnfu7H530003pWzatCnKR41E0759+5Thw4e7nzdv3pxSq1Ytd27KX3/9lVK/fv2Up59+OuWff/5J6dChgzvPDh48mPLss8/6HqfzUOfgjBkzYvpakD0cOHDAff/j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Na+KbTAK4k4//XQXjAEAgNhIzq4NE5WB1uR3zbkIXNtMDRNVINPcCunevbub3P7DDz8EfT5NlFcPs6dNmzb24osv2ueff+4emy9fvii/IgAIj8rla7RL82ZPPPFEN99W1RjPOussVyZfGQAelcBv1qyZG02TM8880y6++GJ78skn3Vy0QG+++aYL0lSmP5yqtgAAIDqyZZCmAh8tW7Z0aYca6brhhhts3rx5vt9rkdby5cv7GiZq0Cil55577nHFP/xpvpkWoVZKo/8cDa17RiMFQLwpU6aMS0ecOnWqu61r165du1xn1ciRI11Rj+HDh9vBgwd9nVba3rtGDhkyxOrXr29XX3216+j66KOP3Fpnuj1hwgR75513GEUDACDG4roEv0ay1Gus1MZixYql+t3cuXPdYtNvvPGGS83RNpqDcdddd7n1e1TlUZUY9fhy5cq5xazVmNGkeY2OVahQwc25mDx5spsIr4nzAJAdXHvttS4omzhxorutubKah6vATZ1L48ePd78bPHiw69TSWpDq1PIKguiyr0IhGjXTtVEVH1u3bu2+cufOHeNXBwAA4jpI0/yJ7du3uwBNvcOBi6927drVChYs6AI1US+wRsXUMKlcubKde+65bjFqpUSKepbVePn2229dI0W9ydpH2bJlY/L6ACAYjXxpRGv27NlucemmTZu6eWe6romuYT179nTXPv1Oqd2XXHKJjRgxwhUBkQ0bNrhrn+bpnnLKKa4DS6NmCtoAAEB8i+sgTSNf1apVc0U91GusBonSGD2qtqiFqhWYeXPK1DAZNGiQa7iogpl6jlVgRHM3ACBe6VKskS1ds1TcQ6P7TZo0sT/++MOeffZZW7dunZszVqdOHbe9Oph0XfM6qbRQtbadNGmS7zk1b01p3zNnzrSff/7ZdVwpkAMAAPEtruekqQGiSo6vv/66W59MjRavGIhX4EOl8f3X9FEQp0aL5pUp1XHv3r2uRxoA4tm///1v1+mk65xSvVUERJ1UrVq1srfeesuNot12223umubNNdNI29KlS323tdSIiiR5kpOT3bIk6rhSireui3HcLwcAAGIdpB06dCisIE3l8TWXQj3ICtQ0uV3l8UUNDqX8KBhTL3Ngw2TYsGGuwIjmqgFAPNm3b5+rUuutWaY1zbTumRac1jXMn+5TwQ+NsHkjZxdccIHrlPI6qbQI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eVQEqXXr1la7dm038rZ+/XoXuF1xxRVWsGDBmL4GAACQvWSqW1eBl4KxGTNmuMnyO3bscKlBSvlp0aKF3X333b7tACA7U8aA1ofUiNqdd97pRtQ039Y/3VEKFCjg0r215IiWGtGomoI0AjQAAJAlI2ler7Hmp5UoUcKNoKlKo8pLU0YfQKIuYq3CSa1atXJrROq6p3RIfxpB00hbsMIhAAAAUQ/S5M0337SdO3e6giEK1gAgkS1evNiV2NfcstNOO83efvvtWB8SAABIQMcVpAFATrN06VI3oqZqjVqGBAAAINII0gAggyiKBAAAookgDQAAAADiCIv2AAAAAEAcIUgDAAAAgDhCkAYAAAAAcYQgDQAAAADiCEEaAAAAAMQRgjQAAAAAiCMEaQAAAAAQRwjSAAAAACCO5I71AQAAsrfnn38+3W2qVatmGzZssCpVqljr1q2jejyvvPKK7d+/P81tKlSoYB07drQXXnjBUlJSQm5XsmRJ6969u/s52LbJyclWpEgRq1GjhjVs2NCSkpLc/QcOHLBRo0a5n1u0aGH16tUL+vyTJ0+2devWWf369a158+buvokTJ9rff/9t119/vbt9+PBhGzlypJUpU8a6dOkS9Hl0bNqH9xz+3n//fdu8ebNdddVVVrx48VS/27dvn7366qvWoEEDa9q0aZrvGQAg6zCSBgCIKAUMX375Zdy8qwpCPv3006C/e+mll+yLL74I63mCbXvw4EGbO3euXXPNNdarVy8XUHlBmt4H7dsL1gLpsU888YTb7rvvvvPd/+GHH9qYMWN8t48cOeK2GTx4sC1cuDDksfk/h2fHjh3ucW+//bZNmDDhmN8rSNNzz549O6z3AACQNRhJAwAcl759+6a6rUZ/zZo1j7k/q9x0002pbitA0QheqOPRKFi4xxpqW41+DRgwwD744APr2rWr736NbM2cOdN2795thQsXTvWYb775xo2gTZs2Lax9d+jQwUaMGOECOI3ghUPHVbp0abvgggvsvffec+9NuI8FAMQOV2oAQJZ47bXX7Kuvvkp1e8GCBbZq1Sp74403XPChn4ONOCmQ0YjUuHHj7I8//oi7v5gCqDx58hwzmlWrVi0rVapU0JFFje61a9cu7H0o2GrVqpWNHTs27McoaFSg2L59e/v999/t66+/DvuxAIDYIUgDAGSJ119/PVWQptvDhg1zc77WrFljP/74o1188cVuTplH87UuueQSt9327dtdEKTA5qOPPoqrv5o3V02BWqC2bdva559/nuq+vXv3uteS0fl5mqf28ccfuzTG9Oj9XL16tRtFU7BYtWpVe/fddzO0PwBAbJDuCACImaVLl7o0vDp16rjbmsP15JNPWpMmTax27dp21113uTlZCspUoMObfzVw4EA744wzrFKlSsd9DMuWLQtZ/OS8886z6tWrp/scmu916NAhVyQkkILKG264IVXK44wZM1yqY2AKZHoUBN5+++321FNP2ZAhQ9I9JhUbady4sbvdqVMnly65fv16VzgFABC/GEkDAMRMmzZtfAGaXHvttVagQAE3WqQA7ueff3YBjhegedsocJs0aVKWH68X0HlfCnpuueUWe/jhh92IoCpGBjrzzDPd8funPGY01dGfqjD+888/tmTJkpDbKCCcOnWqOx5vDppSMvVzRtIlAQCxwUgaACBmTjvttFS38+bNa+XKlXPpjytXrnT3LV68+Jj0vvz58wedv5YZGSkc4p/eqBGpzz77zOrWrWuffPKJSycMRoGRglGlPCpQUnn977//3h599NFMH3P//v3d1+jRo4MWAlFpf1Vu3LZtW6pRwhNPPNEVE7nzzjstX758md4/ACC6GEkDAMRM7tzH9hVqlCxXrlx29OhRX0AWqEePHi4VMat5AZ1SDpWWqfXLNKI1ffr0NB+nY/3222/dCJeKoChVM3DNsoxQIKsRtWBl9b210TQPTdv5u+iii+yvv/6yKVOmZHrfAIDoYyQNABAzGo3yp0WotfDy+eefbxUrVnT3aU6VgguPgreXX37ZihUrZrHWsmVLu/fee92omEau+vXrF3Q7zbHTyJUKpyhAymyqo78bb7zRrc+m9yowJVNpogoiVXQlkCo8qoBI586dj/sYAADRwUgaACBmlAKo0vCeN998042kaS6VCmtUrlzZFRNR8OZfVv6ZZ54JOsIWC9ddd52dc845LnAMtTC2Cn5om/Hjx7vFr1Xx8XgpNbR379729NNPp7pf+9DvQlWOVAVNjf5pzh8AID4xkgYAiJkTTjjBLf6s0SCtf6YFnh955BG3+LQ899xzdvPNN7sRIQUdmpumdEFVfWzUqFFEjiGt6o5eamWhQoXSfA6NpOkYBw0a5OaoBQsgNXqmVEkFnyeddFJEjl3rpinlUYGtHDhwwM2PU5XJUJUjdZyqkKnRtLvvvtvdN3/+/KDvQcOGDd0oIAAgaxGkAQAi6rbbbrOaNWsGDXa84MujghoK0ubNm+d+d//997uy8Z7TTz/djbYpRW/t2rVumz59+rgRtnD17NnzmLlZHo1EeWucpUfbhirHX6JECRdQzpkzx1asWOECSL0PZ511lm8bBU66r0GDBqkeq/sUuHmUhqjiIh7Nz9M2CpiCGTBggFWrVs09x9atW131y2BLAXj0HuoxWjJAlTT13ACA+JKUEu5/JwAAIqhZs2ZuBO2BBx7gfQUAwA9z0gAAAAAgjpDuCACICaU/hlpbDACAnIx0RwAAAACII6Q7AgAAAEAcIUgDAAAAgDhCkAYAAAAAcYQgDQAAAADiCEEaAAAAAMQRgjQAAAAAiCMEaQAAAAAQRwjSAAAAACCOEKQBAAAAgMWP/wNq+9eynEhobgAAAABJRU5ErkJggg=="/>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-OutputArea-output" data-mime-type="text/markdown" tabindex="0">
+<p><strong>Temuan bivariat:</strong> tipe TERMINAL berasosiasi dengan target dengan Cramér's V <strong>0.0683</strong>, sedangkan hubungan model PART dengan tipe TERMINAL jauh lebih kuat, V <strong>0.7055</strong>. Karena itu perbedaan rate terminal berpotensi kuat dipengaruhi komposisi model PART dan wajib diuji multivariat.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=chapter-9-2-multivariate">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h3 id="9.2-Analisis-multivariat-bertingkat">9.2 Analisis multivariat bertingkat<a class="anchor-link" href="#9.2-Analisis-multivariat-bertingkat">¶</a></h3><p>Tiga Logistic Regression L2 dibandingkan: <strong>M1 PART-only</strong>, <strong>M2 PART+TERMINAL</strong>, dan <strong>M3 adjusted operational history</strong>. Data 2014-2024 menjadi train, 2025 validation, dan 2026 test; embargo 30 hari tetap berlaku. Seluruh positif dipertahankan dan negatif diambil deterministik 1:25 dengan bobot 25 untuk mengembalikan distribusi populasi. Analisis ini adalah screening multivariat EDA; final modeling tetap memerlukan tuning, calibration, clustered uncertainty, dan sensitivity terhadap link backfill.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=part-terminal-multivariate">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [21]:</div>
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">multivariate_sample</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s2">"""</span>
+<span class="s2">SELECT CASE</span>
+<span class="s2">         WHEN observation_on + INTERVAL '30 days' &lt; DATE '2025-01-01' THEN 'TRAIN_2014_2024'</span>
+<span class="s2">         WHEN observation_on &gt;= DATE '2025-01-01' AND observation_on + INTERVAL '30 days' &lt; DATE '2026-01-01' THEN 'VALIDATION_2025'</span>
+<span class="s2">         WHEN observation_on &gt;= DATE '2026-01-01' THEN 'TEST_2026'</span>
+<span class="s2">       END split, target_failure_30d::integer target,</span>
+<span class="s2">       item_model_code_clean,</span>
+<span class="s2">       CASE WHEN is_parent_link_valid THEN terminal_type ELSE 'UNMAPPED' END terminal_type,</span>
+<span class="s2">       installed_client_clean, observation_month::text observation_month,</span>
+<span class="s2">       days_since_installation, total_prior_events, prior_failure_count,</span>
+<span class="s2">       prior_corrective_count, prior_distinct_places, days_since_last_event,</span>
+<span class="s2">       days_since_last_failure, days_since_last_corrective, prior_failure_365d,</span>
+<span class="s2">       is_parent_link_recorded_after_installation</span>
+<span class="s2">FROM analytics.eda_item_observation_30d_hierarchy</span>
+<span class="s2">WHERE is_training_eligible AND observation_on &gt;= DATE '2014-01-01'</span>
+<span class="s2">  AND (target_failure_30d OR MOD(ABS(HASHTEXT(installation_cycle_id || observation_date::text)::bigint),25)=0)</span>
+<span class="s2">  AND NOT (observation_on &lt; DATE '2025-01-01' AND observation_on + INTERVAL '30 days' &gt;= DATE '2025-01-01')</span>
+<span class="s2">  AND NOT (observation_on &lt; DATE '2026-01-01' AND observation_on + INTERVAL '30 days' &gt;= DATE '2026-01-01')</span>
+<span class="s2">"""</span><span class="p">)</span>
+<span class="n">multivariate_sample</span><span class="p">[</span><span class="s1">'sample_weight'</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">multivariate_sample</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">25.0</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_prepare_design</span><span class="p">(</span><span class="n">train</span><span class="p">,</span> <span class="n">frames</span><span class="p">,</span> <span class="n">categorical</span><span class="p">,</span> <span class="n">numeric</span><span class="p">):</span>
+    <span class="n">matrices</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">frame</span><span class="p">),</span><span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span> <span class="k">for</span> <span class="n">frame</span> <span class="ow">in</span> <span class="n">frames</span><span class="p">]</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'intercept'</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">categorical</span><span class="p">:</span>
+        <span class="n">train_value</span> <span class="o">=</span> <span class="n">train</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s1">'string'</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s1">'UNKNOWN'</span><span class="p">)</span>
+        <span class="n">counts</span> <span class="o">=</span> <span class="n">train_value</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span>
+        <span class="n">levels</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">counts</span><span class="p">[</span><span class="n">counts</span><span class="o">.</span><span class="n">ge</span><span class="p">(</span><span class="mi">50</span><span class="p">)]</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">reference</span> <span class="o">=</span> <span class="s1">'GATE'</span> <span class="k">if</span> <span class="n">col</span> <span class="o">==</span> <span class="s1">'terminal_type'</span> <span class="ow">and</span> <span class="s1">'GATE'</span> <span class="ow">in</span> <span class="n">levels</span> <span class="k">else</span> <span class="n">levels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">levels</span> <span class="o">=</span> <span class="p">[</span><span class="n">reference</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">levels</span> <span class="k">if</span> <span class="n">v</span> <span class="o">!=</span> <span class="n">reference</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">level</span> <span class="ow">in</span> <span class="n">levels</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="s1">'OTHER'</span><span class="p">]:</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">frame</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">frames</span><span class="p">):</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">frame</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s1">'string'</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s1">'UNKNOWN'</span><span class="p">)</span>
+                <span class="n">mapped</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">levels</span><span class="p">),</span> <span class="s1">'OTHER'</span><span class="p">)</span>
+                <span class="n">matrices</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">matrices</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">mapped</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="n">level</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="nb">float</span><span class="p">)])</span>
+            <span class="n">names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s1">=</span><span class="si">{</span><span class="n">level</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">numeric</span><span class="p">:</span>
+        <span class="n">train_raw</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">train</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s1">'coerce'</span><span class="p">)</span>
+        <span class="n">median</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">train_raw</span><span class="o">.</span><span class="n">median</span><span class="p">())</span> <span class="k">if</span> <span class="n">train_raw</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">any</span><span class="p">()</span> <span class="k">else</span> <span class="mf">0.0</span>
+        <span class="n">transformed_train</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log1p</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">train_raw</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">median</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="nb">float</span><span class="p">),</span><span class="mi">0</span><span class="p">,</span><span class="kc">None</span><span class="p">))</span>
+        <span class="n">mean</span><span class="p">,</span> <span class="n">std</span> <span class="o">=</span> <span class="n">transformed_train</span><span class="o">.</span><span class="n">mean</span><span class="p">(),</span> <span class="n">transformed_train</span><span class="o">.</span><span class="n">std</span><span class="p">()</span> <span class="ow">or</span> <span class="mf">1.0</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">frame</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">frames</span><span class="p">):</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">frame</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s1">'coerce'</span><span class="p">)</span>
+            <span class="n">missing</span> <span class="o">=</span> <span class="n">raw</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log1p</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">raw</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">median</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="nb">float</span><span class="p">),</span><span class="mi">0</span><span class="p">,</span><span class="kc">None</span><span class="p">))</span><span class="o">-</span><span class="n">mean</span><span class="p">)</span><span class="o">/</span><span class="n">std</span>
+            <span class="n">matrices</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">matrices</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">value</span><span class="p">,</span> <span class="n">missing</span><span class="p">])</span>
+        <span class="n">names</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">col</span><span class="p">,</span> <span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s1">_missing'</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">matrices</span><span class="p">,</span> <span class="n">names</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_fit_ridge_logistic</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">weight</span><span class="p">,</span> <span class="n">l2</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
+    <span class="n">beta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span> <span class="n">penalty</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span> <span class="n">penalty</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">weight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span><span class="nb">float</span><span class="p">);</span> <span class="n">weight</span> <span class="o">=</span> <span class="n">weight</span><span class="o">/</span><span class="n">weight</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iter</span><span class="p">):</span>
+        <span class="n">probability</span> <span class="o">=</span> <span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="mi">1</span><span class="o">+</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">X</span><span class="nd">@beta</span><span class="p">,</span><span class="o">-</span><span class="mi">30</span><span class="p">,</span><span class="mi">30</span><span class="p">)))</span>
+        <span class="n">curvature</span> <span class="o">=</span> <span class="n">weight</span><span class="o">*</span><span class="n">probability</span><span class="o">*</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">probability</span><span class="p">)</span>
+        <span class="n">hessian</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">T</span><span class="o">@</span><span class="p">(</span><span class="n">X</span><span class="o">*</span><span class="n">curvature</span><span class="p">[:,</span><span class="kc">None</span><span class="p">])</span> <span class="o">+</span> <span class="n">l2</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">penalty</span><span class="p">)</span>
+        <span class="n">gradient</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">T</span><span class="o">@</span><span class="p">(</span><span class="n">weight</span><span class="o">*</span><span class="p">(</span><span class="n">y</span><span class="o">-</span><span class="n">probability</span><span class="p">))</span> <span class="o">-</span> <span class="n">l2</span><span class="o">*</span><span class="n">penalty</span><span class="o">*</span><span class="n">beta</span>
+        <span class="n">step</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">hessian</span><span class="p">,</span> <span class="n">gradient</span><span class="p">);</span> <span class="n">beta</span> <span class="o">+=</span> <span class="n">step</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">step</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1e-6</span><span class="p">:</span> <span class="k">break</span>
+    <span class="k">return</span> <span class="n">beta</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_weighted_metrics</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">probability</span><span class="p">,</span> <span class="n">weight</span><span class="p">):</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">,</span><span class="nb">int</span><span class="p">);</span> <span class="n">p</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">probability</span><span class="p">,</span><span class="nb">float</span><span class="p">),</span><span class="mf">1e-9</span><span class="p">,</span><span class="mi">1</span><span class="o">-</span><span class="mf">1e-9</span><span class="p">);</span> <span class="n">w</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">grouped</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">'p'</span><span class="p">:</span><span class="n">p</span><span class="p">,</span><span class="s1">'y'</span><span class="p">:</span><span class="n">y</span><span class="p">,</span><span class="s1">'w'</span><span class="p">:</span><span class="n">w</span><span class="p">})</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">'p'</span><span class="p">,</span><span class="n">sort</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">g</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">({</span><span class="s1">'pos'</span><span class="p">:(</span><span class="n">g</span><span class="o">.</span><span class="n">y</span><span class="o">*</span><span class="n">g</span><span class="o">.</span><span class="n">w</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(),</span><span class="s1">'neg'</span><span class="p">:((</span><span class="mi">1</span><span class="o">-</span><span class="n">g</span><span class="o">.</span><span class="n">y</span><span class="p">)</span><span class="o">*</span><span class="n">g</span><span class="o">.</span><span class="n">w</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()}),</span><span class="n">include_groups</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">ranked</span><span class="o">=</span><span class="n">grouped</span><span class="o">.</span><span class="n">sort_index</span><span class="p">(</span><span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">);</span> <span class="n">cumulative_positive</span><span class="o">=</span><span class="n">ranked</span><span class="o">.</span><span class="n">pos</span><span class="o">.</span><span class="n">cumsum</span><span class="p">();</span> <span class="n">cumulative_total</span><span class="o">=</span><span class="p">(</span><span class="n">ranked</span><span class="o">.</span><span class="n">pos</span><span class="o">+</span><span class="n">ranked</span><span class="o">.</span><span class="n">neg</span><span class="p">)</span><span class="o">.</span><span class="n">cumsum</span><span class="p">()</span>
+    <span class="n">ap</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">cumulative_positive</span><span class="o">/</span><span class="n">cumulative_total</span><span class="p">)</span><span class="o">*</span><span class="p">(</span><span class="n">ranked</span><span class="o">.</span><span class="n">pos</span><span class="o">/</span><span class="n">ranked</span><span class="o">.</span><span class="n">pos</span><span class="o">.</span><span class="n">sum</span><span class="p">())))</span>
+    <span class="n">cum_neg</span><span class="o">=</span><span class="n">grouped</span><span class="o">.</span><span class="n">neg</span><span class="o">.</span><span class="n">cumsum</span><span class="p">()</span><span class="o">-</span><span class="n">grouped</span><span class="o">.</span><span class="n">neg</span><span class="p">;</span> <span class="n">auc</span><span class="o">=</span><span class="nb">float</span><span class="p">((</span><span class="n">grouped</span><span class="o">.</span><span class="n">pos</span><span class="o">*</span><span class="p">(</span><span class="n">cum_neg</span><span class="o">+</span><span class="mf">.5</span><span class="o">*</span><span class="n">grouped</span><span class="o">.</span><span class="n">neg</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">/</span><span class="p">(</span><span class="n">grouped</span><span class="o">.</span><span class="n">pos</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">*</span><span class="n">grouped</span><span class="o">.</span><span class="n">neg</span><span class="o">.</span><span class="n">sum</span><span class="p">()))</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s1">'PR-AUC'</span><span class="p">:</span><span class="n">ap</span><span class="p">,</span><span class="s1">'ROC-AUC'</span><span class="p">:</span><span class="n">auc</span><span class="p">,</span><span class="s1">'Brier'</span><span class="p">:</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">average</span><span class="p">((</span><span class="n">y</span><span class="o">-</span><span class="n">p</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span><span class="n">weights</span><span class="o">=</span><span class="n">w</span><span class="p">)),</span><span class="s1">'Log loss'</span><span class="p">:</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">average</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">y</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">p</span><span class="p">)</span><span class="o">+</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">y</span><span class="p">)</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">p</span><span class="p">)),</span><span class="n">weights</span><span class="o">=</span><span class="n">w</span><span class="p">))}</span>
+<span class="n">train_mv</span><span class="o">=</span><span class="n">multivariate_sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">multivariate_sample</span><span class="o">.</span><span class="n">split</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="s1">'TRAIN_2014_2024'</span><span class="p">)]</span><span class="o">.</span><span class="n">copy</span><span class="p">();</span> <span class="n">validation_mv</span><span class="o">=</span><span class="n">multivariate_sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">multivariate_sample</span><span class="o">.</span><span class="n">split</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="s1">'VALIDATION_2025'</span><span class="p">)]</span><span class="o">.</span><span class="n">copy</span><span class="p">();</span> <span class="n">test_mv</span><span class="o">=</span><span class="n">multivariate_sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">multivariate_sample</span><span class="o">.</span><span class="n">split</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="s1">'TEST_2026'</span><span class="p">)]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+<span class="n">model_specs</span><span class="o">=</span><span class="p">{</span>
+ <span class="s1">'M1 PART-only'</span><span class="p">:</span> <span class="p">([</span><span class="s1">'item_model_code_clean'</span><span class="p">],[</span><span class="s1">'days_since_installation'</span><span class="p">]),</span>
+ <span class="s1">'M2 PART+TERMINAL'</span><span class="p">:</span> <span class="p">([</span><span class="s1">'item_model_code_clean'</span><span class="p">,</span><span class="s1">'terminal_type'</span><span class="p">],[</span><span class="s1">'days_since_installation'</span><span class="p">]),</span>
+ <span class="s1">'M3 Adjusted history'</span><span class="p">:</span> <span class="p">([</span><span class="s1">'item_model_code_clean'</span><span class="p">,</span><span class="s1">'terminal_type'</span><span class="p">,</span><span class="s1">'installed_client_clean'</span><span class="p">,</span><span class="s1">'observation_month'</span><span class="p">],[</span><span class="s1">'days_since_installation'</span><span class="p">,</span><span class="s1">'total_prior_events'</span><span class="p">,</span><span class="s1">'prior_failure_count'</span><span class="p">,</span><span class="s1">'prior_corrective_count'</span><span class="p">,</span><span class="s1">'prior_distinct_places'</span><span class="p">,</span><span class="s1">'days_since_last_event'</span><span class="p">,</span><span class="s1">'days_since_last_failure'</span><span class="p">,</span><span class="s1">'days_since_last_corrective'</span><span class="p">,</span><span class="s1">'prior_failure_365d'</span><span class="p">])}</span>
+<span class="n">results</span><span class="o">=</span><span class="p">[];</span> <span class="n">fitted</span><span class="o">=</span><span class="p">{}</span>
+<span class="n">base_probability</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">average</span><span class="p">(</span><span class="n">train_mv</span><span class="o">.</span><span class="n">target</span><span class="p">,</span><span class="n">weights</span><span class="o">=</span><span class="n">train_mv</span><span class="o">.</span><span class="n">sample_weight</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">split_name</span><span class="p">,</span><span class="n">frame</span> <span class="ow">in</span> <span class="p">[(</span><span class="s1">'Validation 2025'</span><span class="p">,</span><span class="n">validation_mv</span><span class="p">),(</span><span class="s1">'Test 2026'</span><span class="p">,</span><span class="n">test_mv</span><span class="p">)]:</span>
+    <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">'Model'</span><span class="p">:</span><span class="s1">'M0 Prevalence'</span><span class="p">,</span><span class="s1">'Periode'</span><span class="p">:</span><span class="n">split_name</span><span class="p">,</span><span class="o">**</span><span class="n">_weighted_metrics</span><span class="p">(</span><span class="n">frame</span><span class="o">.</span><span class="n">target</span><span class="p">,</span><span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">frame</span><span class="p">),</span><span class="n">base_probability</span><span class="p">),</span><span class="n">frame</span><span class="o">.</span><span class="n">sample_weight</span><span class="p">)})</span>
+<span class="k">for</span> <span class="n">model_name</span><span class="p">,(</span><span class="n">categorical</span><span class="p">,</span><span class="n">numeric</span><span class="p">)</span> <span class="ow">in</span> <span class="n">model_specs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="p">(</span><span class="n">x_train</span><span class="p">,</span><span class="n">x_validation</span><span class="p">,</span><span class="n">x_test</span><span class="p">),</span><span class="n">feature_names</span><span class="o">=</span><span class="n">_prepare_design</span><span class="p">(</span><span class="n">train_mv</span><span class="p">,[</span><span class="n">train_mv</span><span class="p">,</span><span class="n">validation_mv</span><span class="p">,</span><span class="n">test_mv</span><span class="p">],</span><span class="n">categorical</span><span class="p">,</span><span class="n">numeric</span><span class="p">)</span>
+    <span class="n">coefficient</span><span class="o">=</span><span class="n">_fit_ridge_logistic</span><span class="p">(</span><span class="n">x_train</span><span class="p">,</span><span class="n">train_mv</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span><span class="n">train_mv</span><span class="o">.</span><span class="n">sample_weight</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">())</span>
+    <span class="n">fitted</span><span class="p">[</span><span class="n">model_name</span><span class="p">]</span><span class="o">=</span><span class="p">(</span><span class="n">coefficient</span><span class="p">,</span><span class="n">feature_names</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">split_name</span><span class="p">,</span><span class="n">frame</span><span class="p">,</span><span class="n">X</span> <span class="ow">in</span> <span class="p">[(</span><span class="s1">'Validation 2025'</span><span class="p">,</span><span class="n">validation_mv</span><span class="p">,</span><span class="n">x_validation</span><span class="p">),(</span><span class="s1">'Test 2026'</span><span class="p">,</span><span class="n">test_mv</span><span class="p">,</span><span class="n">x_test</span><span class="p">)]:</span>
+        <span class="n">probability</span><span class="o">=</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="mi">1</span><span class="o">+</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">X</span><span class="nd">@coefficient</span><span class="p">,</span><span class="o">-</span><span class="mi">30</span><span class="p">,</span><span class="mi">30</span><span class="p">)))</span>
+        <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">'Model'</span><span class="p">:</span><span class="n">model_name</span><span class="p">,</span><span class="s1">'Periode'</span><span class="p">:</span><span class="n">split_name</span><span class="p">,</span><span class="o">**</span><span class="n">_weighted_metrics</span><span class="p">(</span><span class="n">frame</span><span class="o">.</span><span class="n">target</span><span class="p">,</span><span class="n">probability</span><span class="p">,</span><span class="n">frame</span><span class="o">.</span><span class="n">sample_weight</span><span class="p">)})</span>
+<span class="n">multivariate_result</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">multivariate_result</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">5</span><span class="p">))</span>
+<span class="n">coef</span><span class="p">,</span><span class="n">names</span><span class="o">=</span><span class="n">fitted</span><span class="p">[</span><span class="s1">'M3 Adjusted history'</span><span class="p">];</span> <span class="n">adjusted_terminal</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">'Fitur'</span><span class="p">:</span><span class="n">names</span><span class="p">,</span><span class="s1">'Koefisien'</span><span class="p">:</span><span class="n">coef</span><span class="p">});</span> <span class="n">adjusted_terminal</span><span class="o">=</span><span class="n">adjusted_terminal</span><span class="p">[</span><span class="n">adjusted_terminal</span><span class="o">.</span><span class="n">Fitur</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'terminal_type='</span><span class="p">)]</span><span class="o">.</span><span class="n">copy</span><span class="p">();</span> <span class="n">adjusted_terminal</span><span class="p">[</span><span class="s1">'Adjusted odds multiplier'</span><span class="p">]</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">adjusted_terminal</span><span class="o">.</span><span class="n">Koefisien</span><span class="p">);</span> <span class="n">display</span><span class="p">(</span><span class="n">adjusted_terminal</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">'Adjusted odds multiplier'</span><span class="p">,</span><span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">4</span><span class="p">))</span>
+<span class="n">pivot_pr</span><span class="o">=</span><span class="n">multivariate_result</span><span class="o">.</span><span class="n">pivot</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="s1">'Model'</span><span class="p">,</span><span class="n">columns</span><span class="o">=</span><span class="s1">'Periode'</span><span class="p">,</span><span class="n">values</span><span class="o">=</span><span class="s1">'PR-AUC'</span><span class="p">);</span> <span class="n">pivot_pr</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">kind</span><span class="o">=</span><span class="s1">'bar'</span><span class="p">,</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span><span class="mi">4</span><span class="p">),</span><span class="n">color</span><span class="o">=</span><span class="p">[</span><span class="s1">'steelblue'</span><span class="p">,</span><span class="s1">'darkorange'</span><span class="p">]);</span> <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">'Perbandingan PR-AUC multivariat secara temporal'</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">'PR-AUC berbobot'</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">xticks</span><span class="p">(</span><span class="n">rotation</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span><span class="n">ha</span><span class="o">=</span><span class="s1">'right'</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">();</span> <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="s2">"**Cara membaca:** kenaikan M1→M2 mengukur nilai tambah konteks TERMINAL setelah model PART dan umur dikontrol. M2→M3 menunjukkan nilai tambah histori operasional. Koefisien terminal adalah odds multiplier teradjust regularized terhadap referensi GATE, bukan estimasi kausal atau confidence interval final. Kategori dengan overlap model PART yang lemah—terutama Balance Reader yang hanya didukung satu model PART—tidak mempunyai efek terminal independen yang teridentifikasi dengan baik."</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Model</th>
+<th>Periode</th>
+<th>PR-AUC</th>
+<th>ROC-AUC</th>
+<th>Brier</th>
+<th>Log loss</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>M0 Prevalence</td>
+<td>Validation 2025</td>
+<td>0.00579</td>
+<td>0.50000</td>
+<td>0.00576</td>
+<td>0.03603</td>
+</tr>
+<tr>
+<th>1</th>
+<td>M0 Prevalence</td>
+<td>Test 2026</td>
+<td>0.00898</td>
+<td>0.50000</td>
+<td>0.00893</td>
+<td>0.05381</td>
+</tr>
+<tr>
+<th>2</th>
+<td>M1 PART-only</td>
+<td>Validation 2025</td>
+<td>0.05175</td>
+<td>0.75132</td>
+<td>0.00563</td>
+<td>0.03262</td>
+</tr>
+<tr>
+<th>3</th>
+<td>M1 PART-only</td>
+<td>Test 2026</td>
+<td>0.06977</td>
+<td>0.71843</td>
+<td>0.00876</td>
+<td>0.05056</td>
+</tr>
+<tr>
+<th>4</th>
+<td>M2 PART+TERMINAL</td>
+<td>Validation 2025</td>
+<td>0.05185</td>
+<td>0.73412</td>
+<td>0.00563</td>
+<td>0.03319</td>
+</tr>
+<tr>
+<th>5</th>
+<td>M2 PART+TERMINAL</td>
+<td>Test 2026</td>
+<td>0.06571</td>
+<td>0.68005</td>
+<td>0.00877</td>
+<td>0.05232</td>
+</tr>
+<tr>
+<th>6</th>
+<td>M3 Adjusted history</td>
+<td>Validation 2025</td>
+<td>0.08744</td>
+<td>0.73112</td>
+<td>0.00554</td>
+<td>0.03161</td>
+</tr>
+<tr>
+<th>7</th>
+<td>M3 Adjusted history</td>
+<td>Test 2026</td>
+<td>0.11711</td>
+<td>0.72476</td>
+<td>0.00849</td>
+<td>0.04718</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Fitur</th>
+<th>Koefisien</th>
+<th>Adjusted odds multiplier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>38</th>
+<td>terminal_type=CVIM</td>
+<td>0.8014</td>
+<td>2.2288</td>
+</tr>
+<tr>
+<th>40</th>
+<td>terminal_type=VENDING MACHINE</td>
+<td>0.7631</td>
+<td>2.1449</td>
+</tr>
+<tr>
+<th>42</th>
+<td>terminal_type=OTHER</td>
+<td>0.0187</td>
+<td>1.0189</td>
+</tr>
+<tr>
+<th>41</th>
+<td>terminal_type=BALANCE READER</td>
+<td>-0.0924</td>
+<td>0.9118</td>
+</tr>
+<tr>
+<th>39</th>
+<td>terminal_type=POS</td>
+<td>-0.7879</td>
+<td>0.4548</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedImage jp-OutputArea-output" tabindex="0">
+<img alt="No description has been provided for this image" class="" src="data:image/png;base64,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tYwRl5YkE43eh1pXGUgtvbcC32sAAAAAoqyKuOzdu9feeOMNW7BggasYrgriderUsVtuuSUq1sAOh9ZVPuOMM/yp81rjleJuGW8d7KNHj7qfM9M62MqKUHCt95beY5np2AEAAIBYlaIAWyng11xzjZtvXa9ePRdQ79mzx7799lubNWuWvf/++1a3bt1kBUELFy60bdu2Wa1atax69eqp2v7EiRP2448/uuCkRo0aVrVqVUsrZ555pvseOD8dGcepU6fc+yF79uyWNWuKavqlKwXX3nsMAAAAQBQG2G+99Zb7PnPmTCtTpkycedqDBw+2p59+2j766KOw9nXgwAG76aab3JztypUru3W0b7jhBrv77rtTtL2OoUePHm47Bd9PPfWUde/e3QYMGGBpQSPWpUqVcoXejh8/niZ/Ayl3+PBhW7t2rZUtWzbTpfErLZyRawAAACDKA2yNHj/wwANxgmvJly+fPfHEE9a4cWMX4ObPnz/Jfb366qsuHXbSpEluDe3ly5fbtddea61atXIBcnK3HzdunKtgPmPGDMudO7ctWbLEunXr5u7XaHZaUSBEMJQxR7AlV65c7v0AAAAAAGkla0qDFlULD0XzkPWlADscX3zxhXXs2NEFy6J53EovV4Ccku21VFjDhg39wVSDBg3c8SgQBwAAAAAgQwXYSs2eOnVqyPu+/vprN8JcvHjxsAqlbd261SpVqhTn9nPOOcdWr16dou01X1U/e0tnbdq0yaWNK40bAAAAAIAMlSLes2dPu+qqq1yRsbZt27r5xyp89tNPP9mHH35ovXr1CitdWo+RAgUKxLldv3v3JXf7O+64w/3922+/3erXr2+TJ092I94XXnhhqqo5I/POwQ78DoA2CMQazoXI6FTTKLPVykHCnze+/z/QGU30nMJdLSpFAbaqho8YMcKefPJJN2IdWJRJBcX69OmTrPmxwdWdEzr4cLb/999/3e/79++3devWucJjqiKtIDmcOeHB9PhVq1Yl+3HIWNavX5/ehwDENNogkP5oh8ioFFynZa0knD7r1q2L2oEtb4pymq2DfcUVV7jCYStXrrSdO3e6Amc1a9Z062GHyxuJVgp3IP0eKhhOantVFu/bt69deeWVrgibKLDu2rWrqyY+bNiwZD9PdRoEp6Qj81AD1wVF+fLl6RkFaINATOJciIwu3JFBZHwVKlSIyhHsNWvWhL1tigPsI0eO2AcffGBz5861Xbt2WaFChVxKtpbQKlmyZFj7UKE0rfO7ceNGV3nco981zzu522/ZssUdS5s2bfz3qcDZpZdeal9++WWKG7z2gczfM8r/EaANArGMcyGA0/E5E+udQCkqcrZjxw5r166djRw50o0aq8iY0rY1/7pDhw4hC5QlpEWLFq4yuNfTsXnzZre0lm5P7vZnnXWWC6IWLVrk317bLV26NGTADgAAAABApKRoBHv06NEuJXv27NlWunRp/+379u2zwYMH26BBg1xxsXD069fPunTpYrfeeqvVq1fPPa5ly5Z2wQUXuPsVrC9evNileSvvPanthw4dag8//LCrHl6uXDlbsGCBmwswceLElDxVAAAAAADSbgRbAa/mOAcG16L518OHD3c56krVDodGnadPn25NmzZ186UHDhxozz//vP9+VQdfu3atv8BZUttr/vXnn3/u8v+1rJdG2pUeXqZMmZQ8VQAAAAAA0m4EW/OtE6JRZuXeJydPXXOrtbRWKE2aNHFf4W4vKmh1yy23hP33AQAAAABIlxFsFRF77rnn3FzsQJrvPGrUKKtYsaIVKVIk1QcHAAAAAEDUjWA/9NBDtn37dv/vWhta1bkbNWpkJUqUcOnaK1ascEXHmjdvbrt37ybIBgAAAADEjLADbK01vX//fv/vtWvXdt91m3e7Urf1pXnTqi4OAAAAAECsCDvAfvnll9P2SAAAAAAAiLU52KrcrUreAAAAAAAgFQH2n3/+6ZbBAgAAAAAAqQiw69SpY9OmTbPjx4+n5OEAAAAAAESdFK2DXbhwYRs7dqwLssuWLesKmwV74oknXHVxAAAAAABiQYoC7A0bNviriMuePXvibXPq1KnUHRkAAAAAANEeYFNRHAAAAACACMzBlqNHj9rbb79tPXr0sCuuuMK2bNlizzzzjK1cuTKluwQAAAAAILYC7IMHD9r111/vAupdu3bZ5s2bXcGzpUuX2nXXXWeLFi2K/JECAAAAABBtAbYKnB07dsxmzZpln332mb+Y2YQJE+zaa6+1p556KtLHCQDIhLJkyWI5cuRI78MAAADIuAH2ggULbNCgQVauXLk4t2fPnt3uu+8+ly6+f//+SB0jAES1k6d8Fq3y5MljNWrWdIE2AABAtEtRkbMjR464i6aQO8ye3bJmzWqHDh2yAgUK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AACAaAuwT5486YLpYEmtiw0AAAAAQCwIO8C+/PLL3TJdoahiuJbl0nrTffr0sSpVqkTyGAEAAAAAiJ4Au127drZr166Q9ylVXGtf//zzzzZv3jybOHGiVa9ePZLHCQAAAABAdATYAwYMSHKbEydO2OOPP27PP/+8jR07NrXHBgCIEkwnAtIf7RAAMtA62OHInj273XffffbDDz+4YBsAENsK58tlduqk5c6d26LaqZPpfQRAbLdD2iCAzFpFPCkFChSwYsWKuXTykiVLRnr3AIBMJH/u7GZZs5nN6Ga2e5VFpSLVzdpOSO+jAGK3HdIGAURzgC2HDx+O7l5SAEDy6KJ++zJeNSA90Q4BIHOliMvixYtdqnihQoUivWsAAAAAADL/CPaBAwdctfCE1sjet2+fLVmyxEaOHGlXXXVVJI8RAAAAAIDoCbA7deqU4DrYgS655BLr379/ao8LAAAAAIDoDLC7dOni1roOJVeuXFa0aFGrV6+e1apVK5LHBwAAAABAdAXYvXv3DnunK1assPLly7uK4gAAAAAAxIKIFTk7evSoTZ482a6++mr3tXv37kjtGgAAAACA6F+mS/OyJ06c6ILrvXv32hlnnGHXXXedSxkHAAAAACBWpCjAVjXxefPm2QcffGALFy40n89nrVq1ss6dO1uzZs0sR44ckT9SAAAAAACiJcDetWuXffLJJ/bRRx/Zli1brFSpUnbbbbfZpEmT7L777rNy5cql3ZECAAAAABANAfZjjz3mguucOXO60eqOHTtakyZNLGvWrPbFF1+k7VECAAAAABAtAfZ3331n1atXt4EDB1qjRo1cYA0AAAAAAP4n7Cj5rrvusuzZs9uNN95o559/vj355JP222+/hftwAAAAAACiWtgj2G3btnVff//9t3366ac2depUe++996xy5cpubvbx48fT9kgBAAAAAMjAkp3nXbFiRXvggQfs22+/tZdeeslKlixphw8fdmtf33nnnW4+9qFDh9LmaAEAAAAAiLZ1sLUU1+WXX+6+VFFclcS1FvaXX35puXPntlmzZrkq4wAAAAAAxIIUB9iBSpcubf3797e+ffu6YmhKIT958mTYj//999/t3XfftW3btlmtWrWsd+/eVqBAgVRvr5H1u+++26677jq76KKLUvz8AAAAAABISkRKgavY2dGjR11l8ebNm9vLL79s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n9z9AQAAAACQ6QPsTz/91D766CObPHmyLV682Lp37259+/a1HTt2pGj75O4PAAAAAICoCLDff/9969q1q1WsWNGyZMliPXv2tBIlStjUqVNTtH1y9wcAAAAAQKYPsA8fPmx//PGH1a5dO87t+n3ZsmXJ3j65+wMAAAAAIFKyWzratWuXnTp1yooVKxbn9iJFitiGDRuSvX1y95eU48ePuyJpy5cvt2imkf5r6+S1kzVzW7TJmcNsxYoVZlWeM6t03KJOVvcEKeaXydEGMznaYVSgHWZitMGoQBvM5KK8HR4/fty9RzN8gH306FH3PUeOHHFuz549u3sSyd0+uftLivcihvtiZmZn5M1pUS1vCYtmsfAejXa0wcyPdpj50Q4zN9pg5kcbzPyyROk1qZ5Xpgiw8+TJ4757gbFHv+fNmzfZ2yd3f0mpV69esh8DAAAAAIhN6ToHW8XHcubMaVu3bo1z+7Zt26x06dLJ3j65+wMAAAAAICoCbKVua73qH3/80X/bsWPHbMmSJdakSZNkb5/c/QEAAAAAECnpmiIut912m/Xq1cstq6WU7DFjxljBggWtQ4cO7v4DBw7Y3r173Qh01qxZk9w+qfsBAAAAAEgLWXwZoNTbnDlzbNy4cbZnzx6rVauW3XPPPXbmmWe6+z799FN77bXXbPr06ZY/f/4ktw/nfgAAAAAAojLABgAAAAAgs0vXOdgAAAAAAEQLAmwAAAAAACKAABsAAAAAgAggwAYAAAAAIAIIsAEAAAAAiAACbAAAAAAAIoAAGwAAAACACCDABgAAAAAgAgiwAQAAMplDhw7ZF198YT6fL70PBQAQgAAbABCWvXv32t9//53oNps3b7Zjx47xigJp7JdffrG7777blixZwmsNZDDr169P70NAOiLARqa3bt06e/vtt93Xpk2b0vtwgKj1xBNP2ODBgxNti5deeqkdPHjwtB4XEO2OHDkS77amTZtayZIlbfr06elyTABCmzlzpt100028PDGMABuZ2qhRo6x79+72119/2Q8//GBt2rSxL7/8Mr0PC4hKHTp0cKNl//zzjx0/fjzeyNmpU6dcumqWLFnS7RiBaKJ2duWVV1rbtm1t586dce7LmjWrtWvXzl3MkzUCpA91KK9YsSLeuZDzYGwjwEam9c0339gnn3xi06ZNs6eeespef/11u/76623QoEG2b9++9D48IOpccMEFVqRIETdi9t1331m3bt1c5ognW7Zs6Xp8QDQG2KtXr7aiRYtar1697MCBA3Hu79ixozvfzZ07N92OEYhFv/32mw0bNswN9Fx77bX2/fffx+n8QmzjHYAMb9WqVTZ06FDr0aOHPfnkk7Znzx53+2effebSUfPmzesu+G+55RYXbGsUW8VfAERW9uzZ3Uia2tkll1xi99xzjz3zzDOusyswwKbnHkge1TZQR7FGvgJ5v99+++22fft269+/vwu6PVWqVLHq1au7Ngkg7b355psuqFabzJ07t0sFb926tQ0YMMBfo0TnSs6DsY0AGxmagmgF1qVLl7Ybb7zRpeIo4JaTJ0/a119/bRdddJGrpHr11VfbggULXBB+5plnpvehA5net99+60bNunbt6h+pVrqqirf8+uuv1rt3b/e7Au0//viDEWwghXRue/fdd+3HH38MGWDnyZPHXn75Zfv555/twQcfjFM5XG1Q577du3fz+gMpsHXr1gTv07WmvjyHDx+2V155xXV2qchgqVKl3Eh2hQoVXNCtQSBGsEGAjQx1gaEqxZ6jR4/akCFD7NFHH3UX8i1atHAfYueff767v27durZr1y778MMPXXq4Rq5z5szpqhhrOwDJpzZ1//3326effmrDhw93czybNWvmflamSK1ataxSpUr+EbPHH3/cjaD16dOHqRlAEnbs2GEbN26Md3udOnXsnHPOiVewzAuwVeSsQYMGLrj+/PPP7dlnn/Vvozaq7TQXG0DyzJ8/3+699954t6u2z2233eauNfWljmQFz+rQkhMnTvi3zZUrl7322mvuNo1ks3QeCLCRrtQrqDllAwcOtEaNGrmqqPpw0oeURskUdOuDLaGCS/pQe/XVV/29i3qc0uyCi8EACE/BggXdyLWmZbz11lvuYuLOO+90F/HvvPOO20a3zZgxw6WqqlNLvflKD9fFv5AaB/wf72JbhciUStqpUyd3UR/qnKYinRohCw6w1eEsN9xwg5t3PW7cOH9WSfHixe28886Lkyaux6nw50MPPeRqlQAILUeOHK5gp1bB0JesXbvW1Rhp3Lixqzei7JLly5e7juQyZcpYvXr14hX5LFasmBvs0dxsnRM5D8Y2AmxEXHARloSsXLnSjUrrAqBEiRLuw2rs2LE2Z84cmzx5shUuXNht533gBVPRFy0bNGvWLHfBouJmmh+qIFvBARCrlAkyceJEt05uYjRapot6dWLpu6Zc6GLjiiuu8F+4ezQFQxcOmmPWvn17N1qtQFzUVnVhoewRAP/n448/ducnUWfUxRdf7M5377//vo0fPz7OS6U2qPohaoehAuxt27a5c6TOnZr7qawSTY8SBd2atqFiZ88//7w7t6o+QtWqVV29BAChnXHGGW7OtM5rI0eOdLe98cYbLqtEtX10f/369e3FF1+0ZcuW2bx581xb1ffgej9qb9qHpkwhthFgI6I0/1nzUkLRiLR6Ar25LirOoosGfWApJVVzzJSKqpGyjz76yF2EaJvg4i16jNJ2tOa1ttU8bX0vX768PffcczZmzBgrUKAA/1nEFI2OffXVV9avXz9X/G/RokXuoiEh6mHXnE61PQXaGgFT21XBMo1Qa3RaF/KeJk2auLlm2lbflXES2DYrVqzo2p8w/wyxSmmlanues88+29UN0XlO1LY0OqZsjy1btriOYW+JrbPOOiteu/IC7Jdeesmd59TBpWlTCxcudNM11H41Ut2yZUtX8POxxx5zI+YqxDRlyhRXw0Qja0As+f333925MLhoYCi6LlVbUu0eFS8TLUWp2j+BtI2+1ImlTmidI3XODaZONGV9cR6MbQTYiChdhOtkr552jwqv6MJd6Tbq2dOFgC7EvZEyfUgFzldRT7w3UqbeQ/XQez36uhBRL6LmsenCRTRvTXO09aUeRyCW6MJdGRsXXnihu6BQ+pp61hU862IgFLXJ0aNHuwt1dWqVK1fOZZJo1EujXxrRVoeV0sA9SndTD78CbLVXBQr6O4FL4tWsWdNtp9E1INYo6FUQrNohHk17KlmypD9oVntTwKt51A8//LBLNdW5yytQppExLfejc5x4AYJqjChjRPVFdJ7Nnz+/C6LLli1rDzzwgDuPqm6C2qSmXFWuXDldXgMgI9BykjpfBc+F1hQMBb9aVkvnSLUvtT/VEtGgjdcRputLXYcGq1atmv37779uVFsFdhOq3q9zoQaNELsIsBFR+sDRHM7AQi3qYVcKqUbGlPqteWP60gWGLtKVzqrexlAjZQq2e/bs6QL0yy+/3AURShnXhQXzWxDrNFqlkTClcivrQxfuyvBQG0yMeuc1lUJVTwOpE+zPP/+0DRs2uAt9BdiBhVzUXjXqpkrGao8TJkyI87dUyVj7TGzkHIhWupivUaOGaz/e9AyNYulCXwXI1EGsWgWayuR1VHXp0sX69u3rLvLV9tSu1H68zi0vwFbncfAFu86raoMKGtQOlUXCqBliSeCSdYE0Gq16B97SkaJCZkr9VoaXznUKqL2OrODl7vRYZXAFz7NWJqYGdQLPh14GikftWqPidHLFOB8QYYMHD/a1a9fO/fz333/7qlSp4tu7d6/v0KFDvmnTpvl69uzpa9y4se+NN95w21x22WW+p556Ks4+RowY4bv44ot9p06dcr9v2bLF9/333/s2b97M/wsxad++fb4vv/zS98477/h+/fVXd9v+/fvjbKN2pLZ17NixRPe1bds21y5nzZoV53a1U92+YMEC36ZNm3xVq1b1ffPNN3G2UTsMtf/Ro0f7LrzwQnc/EI10Pvrhhx98jz76qG/jxo3x7l+0aJFv0KBBvksuucQ3ZMgQ/+1//PGHa1dfffWV+/23335zv//888/+bdTerrnmGt+cOXN8AwYM8F155ZX+27Xt3LlzT8tzBDKLbt26+V555ZUE7//ll198rVq18h04cMD3559/+mrWrOmuQxMyfvx4d/48evSoa+vdu3f3NWvWzJ0D169f765LzzvvPN+///7rtveuT4Pdeeed7hpYj0HsYgQbqaLePC1NoJ7B9957z92mUWf1xGve2X///eduU/qN5qUo3btz584u1U099uKNlAWuM6ieQRVL00iAaERbc0SD58QA0Uw947Nnz3YjXM2bN3dVvTVipVEvFTFTmmggtT1lhISqUBzYZtXDrjRwFVoKpN54UZq5UuQ0H3TFihVxtlE71PSOYLfeeqtr17ofiNbRMqWX6nyl6RiB1b5FI8+6LXDEOnB0bOrUqf700cCl7kTtTe170qRJLl1c50+dRzWCrdE4nQMB/B9liwRmS2qJSdU/8M5jyqZSOrfmSefLl8+d91QnSPVHdE2qqRQqlKttRNM79u/f77ItlSGpFWqUlakszGuuucZNfVTRQrVHSSiLUtOsVBtIU68QuwiwkSK6cFBxlu7du9v27dvdRYA+uFTRW3PK9MGiiwel0ihFx1ujU5WGNe9ay2sp9UYpOAqw9cGolBqPLj40n03zQIFYo/YyePBgNyVCS2MpuFbQrDRwtSO1Ia2Dq7Vxgy84lJYWvJau1u5UYK6LhOuvv94FzXfffbctXrzYnn76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/bcpINdXMKWaP/rooy5tFUDa0TrVSvcOzBhR5X61VRU/A5D5EGADAJBJaC6mRq6bNWvmqoMr0D5+/Li7T8GwUkp1UV6uXLl4aeKvvfaade3a1YoWLeqW/RkyZIhbY/e7775Lp2cDQK6++mrXqaW1r70Ra7VTAJkTATYAAJmEAmItg6XRLqWJawR72LBh7r7AokhaO1eVhb0Lds3n1O8a2fZGp1WxeOrUqW5UHED60XSM+++/P8Gl7wBkLgTYAABkEkoDb9u2rZtjrSV6vIJnkydPjld1eP/+/TZ37lx/enjhwoXd+tQvvviizZgxw6WKs141AACRlcUXqgoKAADIkFasWOFSSt9//31r1KiRffLJJ/bEE0+4n6tXr24DBw5021133XUuzfSVV15x86yVQs6cagAA0lb2NN4/AACIoNq1a9s555zj0rsVVHfp0sWWLFliU6ZMcXOvPUoh96qFq5ASAABIe6SIAwCQySgF/Msvv/TPsVbBsksuucStl+upUKEC61UDAHCakSIOAEAms2XLFlec7IUXXnBL/AAAgIyBABsAgExI61xrqS4VNwMAABkDATYAAAAAABHAHGwAAAAAACKAABsAAAAAgAggwAYAAAAAIAIIsAEAAAAAiAACbAAAAAAAIoAAGwAAAACACCDABgAAAAAgAgiwAQCIEidOnLBRo0a5r8WLFye43RdffOG2mT9/fqr/5rfffmtvvvlm2Ntv27bN/e0NGzak+m8DAJDREGADABAlTp48aa+88oqNHTvWRo8enWAQPmzYMHd/JALsBQsWuL8Xru3bt7tjJMAGAEQjAmwAAKJMs2bN7IcffrA9e/bEu2/hwoVWvXp1y5YtW7ocGwAA0Sx7eh8AAACIrEqVKtnff/9tX3/9tXXp0iVeevhll11mixYtive4nTt32vfff29bt261UqVK2SWXXGL58+ePs83atWvtu+++c6PlF110Uci/v3v3bps3b57b31lnnWUtWrSwvHnzRvhZAgCQ8TCCDQBAFGrVqpXNmjUrzm1Hjx61b775xi699NJ420+aNMkF3lOnTrVdu3a5edX6fdmyZf5txo8fb23btrUlS5a4FO8bb7zRzcEOpKBe+//kk0/sv//+c49p06aN/fHHH2n4bAEAyBgYwQYAIEoD7HHjxrk08cKFC7vbNOe6WrVq/t89q1evtkceecR69+5td999t7vt+PHj7vd+/frZ7NmzbfPmzfbss8/awIED7ZZbbnHbKMDu3Lmz5cyZ0/2ukW/drxHr559/3rJkyeJGunv27Gl33nmnzZw587S/DgAAnE6MYAMAEIXq1KljxYsXdyPKnhkzZrhR6WDTpk2z7Nmz22233ea/LUeOHNa3b1+X5j137lz3WG1zww03+Lc555xzrGXLlv7fp0+fbocPH3ZBuYJr0VxvBeLr169PtLI5AADRgBFsAACilIJfpYlrHvbBgwddOvegQYPibbdu3To35zp4nrTmcovSwbVNyZIlLVeuXPG28dLENe9bgfXnn3/uD7C9OdmyZs0aq127dpo8VwAAMgJGsAEAiOI0ca+auEahq1at6oLkYD6fL05A7Dl16pT7rpFrb7uEthGlgysAD95XkSJF3Ki2qpcDABDNGMEGACBKNWzY0AoWLGhz5sxxqeKh0sOlQoUKrnr4oUOH4oxia8RZypYt6wqkKUgP3mbjxo3+n8uXL29HjhxxaeSB87z/+ecfmzJlip1xxhl24MCBNHq2AACkP0awAQCIUpr/rIJjCm4VQGtEO5SOHTu60ec33njDf5uKnI0ePdqNPms5Lm2jkWkVTvOo8Flg4bL27du7uduvvPJKnP2/8MIL9u6771qJEiXS5HkCAJBRMIINAEAU06i1qoHXqFHDypQpE3IbVRYfOnSoPf7447ZixQqrXLmyWydbBc5GjRpl+fLlc19PPPGEqza+cuVKK126tJvfre9a1kvKlStnTz/9tNtGlcnr1q3r9rdq1Sr/fgAAiGZZfKEmVAEAgEznxIkTbtRZqeHnnXeeu+3YsWM2ZswYV1W8efPm/m1fe+01q1mzphud9miZLa2TrfWrFYxffPHF8QqfbdmyxebNm+eqhTdp0sSNdGtd7F69evm32bFjh9uPiptpzvcll1xihQoVcvdt27bNPv74Y+vQoYMLyAEAiCYE2AAAAAAARABzsAEAAAAAiAACbAAAAAAAIoAAGwAAAACACCDABgAAAAAgAgiwAQAAAACIAAJsAAAAAAAigAAbAAAAAIAIIMAGAAAAACACCLABAAAAAIgAAmwAAAAAACKAABsAAAAAgAggwAYAAAAAwFLv/wEjRpEesI4uuQAAAABJRU5ErkJggg=="/>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-OutputArea-output" data-mime-type="text/markdown" tabindex="0">
+<p><strong>Cara membaca:</strong> kenaikan M1→M2 mengukur nilai tambah konteks TERMINAL setelah model PART dan umur dikontrol. M2→M3 menunjukkan nilai tambah histori operasional. Koefisien terminal adalah odds multiplier teradjust regularized terhadap referensi GATE, bukan estimasi kausal atau confidence interval final. Kategori dengan overlap model PART yang lemah—terutama Balance Reader yang hanya didukung satu model PART—tidak mempunyai efek terminal independen yang teridentifikasi dengan baik.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
 <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=chapter-9-feature">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="9.-Feature-readiness-dan-transformasi-sebelum-modeling">9. Feature readiness dan transformasi sebelum modeling<a class="anchor-link" href="#9.-Feature-readiness-dan-transformasi-sebelum-modeling">¶</a></h2><p><strong>Pertanyaan:</strong> fitur mana yang tersedia, redundan, berpotensi informatif, atau
+<h2 id="10.-Feature-readiness-dan-transformasi-sebelum-modeling">10. Feature readiness dan transformasi sebelum modeling<a class="anchor-link" href="#10.-Feature-readiness-dan-transformasi-sebelum-modeling">¶</a></h2><p><strong>Pertanyaan:</strong> fitur mana yang tersedia, redundan, berpotensi informatif, atau
 berisiko leakage? Feature selection hanya boleh belajar dari periode train.
 Karena itu split waktu ditentukan lebih dahulu, lalu korelasi dan IV dihitung
 pada train 2014-2024 dengan embargo 30 hari.</p>
@@ -12545,7 +13337,7 @@ pada train 2014-2024 dengan embargo 30 hari.</p>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="9.1-Time-based-split-dan-embargo-target">9.1 Time-based split dan embargo target<a class="anchor-link" href="#9.1-Time-based-split-dan-embargo-target">¶</a></h3><p>Random split dilarang. Snapshot yang horizon 30 harinya menyeberangi batas tahun
+<h3 id="10.1-Time-based-split-dan-embargo-target">10.1 Time-based split dan embargo target<a class="anchor-link" href="#10.1-Time-based-split-dan-embargo-target">¶</a></h3><p>Random split dilarang. Snapshot yang horizon 30 harinya menyeberangi batas tahun
 train/validation dikeluarkan sebagai embargo. Data 2026 tidak digunakan untuk
 memilih fitur, parameter, atau threshold.</p>
 </div>
@@ -12556,7 +13348,7 @@ memilih fitur, parameter, atau threshold.</p>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [20]:</div>
+<div class="jp-InputPrompt jp-InputArea-prompt">In [22]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
 <div class="highlight hl-ipython3"><pre><span></span><span class="n">splits</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s2">"""</span>
@@ -12685,7 +13477,7 @@ memilih fitur, parameter, atau threshold.</p>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="9.2-Missing,-korelasi,-redundansi,-dan-Information-Value">9.2 Missing, korelasi, redundansi, dan Information Value<a class="anchor-link" href="#9.2-Missing,-korelasi,-redundansi,-dan-Information-Value">¶</a></h3><p>Pearson dan Spearman memeriksa redundancy; IV adalah screening univariat, bukan
+<h3 id="10.2-Missing,-korelasi,-redundansi,-dan-Information-Value">10.2 Missing, korelasi, redundansi, dan Information Value<a class="anchor-link" href="#10.2-Missing,-korelasi,-redundansi,-dan-Information-Value">¶</a></h3><p>Pearson dan Spearman memeriksa redundancy; IV adalah screening univariat, bukan
 feature importance final. Seluruh perhitungan pemilihan fitur di bagian ini
 dibatasi pada train agar validation/test tidak bocor ke keputusan fitur.</p>
 </div>
@@ -12696,7 +13488,7 @@ dibatasi pada train agar validation/test tidak bocor ke keputusan fitur.</p>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [21]:</div>
+<div class="jp-InputPrompt jp-InputArea-prompt">In [23]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
 <div class="highlight hl-ipython3"><pre><span></span><span class="n">candidate_numeric_features</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'days_since_installation'</span><span class="p">,</span><span class="s1">'days_since_last_event'</span><span class="p">,</span><span class="s1">'days_since_last_failure'</span><span class="p">,</span><span class="s1">'days_since_last_corrective'</span><span class="p">,</span><span class="s1">'days_at_last_location'</span><span class="p">,</span><span class="s1">'total_prior_events'</span><span class="p">,</span><span class="s1">'prior_failure_count'</span><span class="p">,</span><span class="s1">'prior_corrective_count'</span><span class="p">,</span><span class="s1">'prior_relocation_count'</span><span class="p">,</span><span class="s1">'prior_preventive_count'</span><span class="p">,</span><span class="s1">'prior_repair_process_count'</span><span class="p">,</span><span class="s1">'prior_events_30d'</span><span class="p">,</span><span class="s1">'prior_events_90d'</span><span class="p">,</span><span class="s1">'prior_events_180d'</span><span class="p">,</span><span class="s1">'prior_corrective_30d'</span><span class="p">,</span><span class="s1">'prior_corrective_90d'</span><span class="p">,</span><span class="s1">'prior_corrective_180d'</span><span class="p">,</span><span class="s1">'prior_preventive_90d'</span><span class="p">,</span><span class="s1">'prior_failure_365d'</span><span class="p">,</span><span class="s1">'prior_distinct_places'</span><span class="p">]</span>
@@ -13025,13 +13817,1052 @@ dibatasi pada train agar validation/test tidak bocor ke keputusan fitur.</p>
 </div>
 </div>
 </div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=chapter-10-3-feature-engineering">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h3 id="10.3-Keputusan-final-fitur-dan-output-feature-engineering">10.3 Keputusan final fitur dan output feature engineering<a class="anchor-link" href="#10.3-Keputusan-final-fitur-dan-output-feature-engineering">¶</a></h3><p>Keputusan fitur dibakukan dalam catalog database agar alasan keep/drop tidak hanya berada di narasi notebook. <code>failure_30d_baseline_features</code> hanya berisi key dan fitur baseline yang telah ditransformasi; <code>failure_30d_challenger_features</code> menambahkan lokasi, hierarchy terminal, interaksi, serta kandidat redundan untuk eksperimen terkontrol. Label dan temporal split berada terpisah pada <code>failure_30d_model_labels</code>. View <code>failure_30d_model_audit</code> hanya untuk QA dan tidak boleh menjadi input training langsung.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=feature-engineering-final">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [24]:</div>
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">feature_catalog</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s1">'SELECT * FROM analytics.failure_30d_feature_catalog ORDER BY decision, feature_group, feature_name'</span><span class="p">)</span>
+<span class="n">feature_quality</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s1">'SELECT * FROM analytics.failure_30d_feature_quality_summary ORDER BY metric'</span><span class="p">)</span>
+<span class="n">feature_split</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s2">"SELECT temporal_split, COUNT(*) snapshots, COUNT(*) FILTER (WHERE target_failure_30d) positives FROM analytics.failure_30d_model_labels GROUP BY temporal_split ORDER BY temporal_split"</span><span class="p">)</span>
+<span class="n">decision_summary</span> <span class="o">=</span> <span class="n">feature_catalog</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">'decision'</span><span class="p">,</span><span class="n">as_index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">size</span><span class="p">()</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'decision'</span><span class="p">:</span><span class="s1">'Keputusan'</span><span class="p">,</span><span class="s1">'size'</span><span class="p">:</span><span class="s1">'Jumlah fitur'</span><span class="p">})</span>
+<span class="n">display</span><span class="p">(</span><span class="n">decision_summary</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">feature_catalog</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">feature_catalog</span><span class="o">.</span><span class="n">decision</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'KEEP'</span><span class="p">)]</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'feature_name'</span><span class="p">:</span><span class="s1">'Fitur hasil'</span><span class="p">,</span><span class="s1">'source_column'</span><span class="p">:</span><span class="s1">'Sumber'</span><span class="p">,</span><span class="s1">'feature_group'</span><span class="p">:</span><span class="s1">'Kelompok'</span><span class="p">,</span><span class="s1">'decision'</span><span class="p">:</span><span class="s1">'Keputusan'</span><span class="p">,</span><span class="s1">'transformation'</span><span class="p">:</span><span class="s1">'Transformasi'</span><span class="p">,</span><span class="s1">'missing_handling'</span><span class="p">:</span><span class="s1">'Penanganan missing'</span><span class="p">,</span><span class="s1">'rationale'</span><span class="p">:</span><span class="s1">'Alasan'</span><span class="p">}))</span>
+<span class="n">display</span><span class="p">(</span><span class="n">feature_catalog</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">feature_catalog</span><span class="o">.</span><span class="n">decision</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'DROP'</span><span class="p">)]</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'feature_name'</span><span class="p">:</span><span class="s1">'Fitur dibuang'</span><span class="p">,</span><span class="s1">'source_column'</span><span class="p">:</span><span class="s1">'Sumber'</span><span class="p">,</span><span class="s1">'feature_group'</span><span class="p">:</span><span class="s1">'Kelompok'</span><span class="p">,</span><span class="s1">'decision'</span><span class="p">:</span><span class="s1">'Keputusan'</span><span class="p">,</span><span class="s1">'transformation'</span><span class="p">:</span><span class="s1">'Transformasi'</span><span class="p">,</span><span class="s1">'missing_handling'</span><span class="p">:</span><span class="s1">'Penanganan missing'</span><span class="p">,</span><span class="s1">'rationale'</span><span class="p">:</span><span class="s1">'Alasan'</span><span class="p">}))</span>
+<span class="n">display</span><span class="p">(</span><span class="n">feature_quality</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'metric'</span><span class="p">:</span><span class="s1">'Quality check'</span><span class="p">,</span><span class="s1">'value'</span><span class="p">:</span><span class="s1">'Nilai'</span><span class="p">,</span><span class="s1">'expectation'</span><span class="p">:</span><span class="s1">'Ekspektasi'</span><span class="p">}))</span>
+<span class="n">display</span><span class="p">(</span><span class="n">feature_split</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'temporal_split'</span><span class="p">:</span><span class="s1">'Split waktu'</span><span class="p">,</span><span class="s1">'snapshots'</span><span class="p">:</span><span class="s1">'Snapshot'</span><span class="p">,</span><span class="s1">'positives'</span><span class="p">:</span><span class="s1">'Positif'</span><span class="p">}))</span>
+<span class="n">engineered_sample</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s2">"SELECT * FROM analytics.failure_30d_baseline_features ORDER BY observation_on DESC LIMIT 10"</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">engineered_sample</span><span class="p">)</span>
+<span class="n">baseline_kept</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">feature_catalog</span><span class="o">.</span><span class="n">decision</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="s1">'KEEP_BASELINE'</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">());</span> <span class="n">challenger_kept</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">feature_catalog</span><span class="o">.</span><span class="n">decision</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="s1">'KEEP_CHALLENGER'</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">());</span> <span class="n">dropped</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">feature_catalog</span><span class="o">.</span><span class="n">decision</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'DROP'</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+<span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""**Output siap modeling:** **</span><span class="si">{</span><span class="n">baseline_kept</span><span class="si">}</span><span class="s2"> fitur baseline**, **</span><span class="si">{</span><span class="n">challenger_kept</span><span class="si">}</span><span class="s2"> kandidat challenger**, dan **</span><span class="si">{</span><span class="n">dropped</span><span class="si">}</span><span class="s2"> fitur/kelompok raw yang dibuang atau diganti transformasi**. Quality gate memastikan jumlah feature row sama dengan label, key ganda nol, seluruh fitur inti/non-null hasil engineering lengkap, dan tidak ada nama kolom target/future pada feature views.</span>
+
+<span class="s2">Join training yang diwajibkan: `(installation_cycle_id, item_identifier_clean, observation_on)`, filter `temporal_split`, lalu pilih view baseline atau challenger—jangan membaca `failure_30d_model_audit` sebagai matriks training."""</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Keputusan</th>
+<th>Jumlah fitur</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>AUDIT_ONLY</td>
+<td>5</td>
+</tr>
+<tr>
+<th>1</th>
+<td>DROP_LEAKAGE</td>
+<td>2</td>
+</tr>
+<tr>
+<th>2</th>
+<td>DROP_RAW</td>
+<td>2</td>
+</tr>
+<tr>
+<th>3</th>
+<td>DROP_REDUNDANT</td>
+<td>3</td>
+</tr>
+<tr>
+<th>4</th>
+<td>DROP_REDUNDANT_WEAK</td>
+<td>2</td>
+</tr>
+<tr>
+<th>5</th>
+<td>DROP_REPLACED</td>
+<td>2</td>
+</tr>
+<tr>
+<th>6</th>
+<td>DROP_WEAK</td>
+<td>5</td>
+</tr>
+<tr>
+<th>7</th>
+<td>DROP_WEAK_DRIFT</td>
+<td>1</td>
+</tr>
+<tr>
+<th>8</th>
+<td>KEEP_BASELINE</td>
+<td>16</td>
+</tr>
+<tr>
+<th>9</th>
+<td>KEEP_CHALLENGER</td>
+<td>10</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Fitur hasil</th>
+<th>Sumber</th>
+<th>Kelompok</th>
+<th>Keputusan</th>
+<th>Transformasi</th>
+<th>Penanganan missing</th>
+<th>Alasan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>22</th>
+<td>has_prior_corrective</td>
+<td>prior_corrective_count</td>
+<td>BINARY</td>
+<td>KEEP_BASELINE</td>
+<td>GREATER_THAN_ZERO</td>
+<td>FALSE_IS_VALID</td>
+<td>Pendamping missing struktural recency corrective</td>
+</tr>
+<tr>
+<th>23</th>
+<td>has_prior_failure</td>
+<td>prior_failure_count</td>
+<td>BINARY</td>
+<td>KEEP_BASELINE</td>
+<td>GREATER_THAN_ZERO</td>
+<td>FALSE_IS_VALID</td>
+<td>Memisahkan PART yang belum pernah failure dari...</td>
+</tr>
+<tr>
+<th>24</th>
+<td>month_cos</td>
+<td>observation_month</td>
+<td>CALENDAR</td>
+<td>KEEP_BASELINE</td>
+<td>CYCLIC_COS</td>
+<td>NOT_NULL</td>
+<td>Pasangan month_sin untuk merepresentasikan sik...</td>
+</tr>
+<tr>
+<th>25</th>
+<td>month_sin</td>
+<td>observation_month</td>
+<td>CALENDAR</td>
+<td>KEEP_BASELINE</td>
+<td>CYCLIC_SIN</td>
+<td>NOT_NULL</td>
+<td>Musiman tanpa menganggap Desember jauh dari Ja...</td>
+</tr>
+<tr>
+<th>26</th>
+<td>client_category</td>
+<td>installed_client_clean</td>
+<td>CATEGORICAL</td>
+<td>KEEP_BASELINE</td>
+<td>ONE_HOT</td>
+<td>UNKNOWN_CATEGORY</td>
+<td>Empat kategori dengan coverage penuh; konteks ...</td>
+</tr>
+<tr>
+<th>27</th>
+<td>part_model_category</td>
+<td>item_model_code_clean</td>
+<td>CATEGORICAL</td>
+<td>KEEP_BASELINE</td>
+<td>ONE_HOT_RARE_GROUP</td>
+<td>UNKNOWN_CATEGORY</td>
+<td>Model PART merupakan identitas teknis utama da...</td>
+</tr>
+<tr>
+<th>28</th>
+<td>log_prior_corrective_30d</td>
+<td>prior_corrective_30d</td>
+<td>COUNT</td>
+<td>KEEP_BASELINE</td>
+<td>LOG1P</td>
+<td>ZERO_IS_VALID</td>
+<td>Window corrective 30 hari kuat pada screening ...</td>
+</tr>
+<tr>
+<th>29</th>
+<td>log_prior_corrective_count</td>
+<td>prior_corrective_count</td>
+<td>COUNT</td>
+<td>KEEP_BASELINE</td>
+<td>LOG1P</td>
+<td>ZERO_IS_NEVER_CORRECTIVE</td>
+<td>Histori corrective mempunyai IV tinggi dan rel...</td>
+</tr>
+<tr>
+<th>30</th>
+<td>log_prior_distinct_places</td>
+<td>prior_distinct_places</td>
+<td>COUNT</td>
+<td>KEEP_BASELINE</td>
+<td>LOG1P</td>
+<td>ZERO_IS_VALID</td>
+<td>Mobilitas/lifecycle mempunyai IV tinggi</td>
+</tr>
+<tr>
+<th>31</th>
+<td>log_prior_events_180d</td>
+<td>prior_events_180d</td>
+<td>COUNT</td>
+<td>KEEP_BASELINE</td>
+<td>LOG1P</td>
+<td>ZERO_IS_VALID</td>
+<td>Window event 180 hari mempunyai IV sedang dan ...</td>
+</tr>
+<tr>
+<th>32</th>
+<td>log_prior_failure_365d</td>
+<td>prior_failure_365d</td>
+<td>COUNT</td>
+<td>KEEP_BASELINE</td>
+<td>LOG1P</td>
+<td>ZERO_IS_VALID</td>
+<td>Menangkap failure yang masih relatif baru</td>
+</tr>
+<tr>
+<th>33</th>
+<td>log_prior_failure_count</td>
+<td>prior_failure_count</td>
+<td>COUNT</td>
+<td>KEEP_BASELINE</td>
+<td>LOG1P</td>
+<td>ZERO_IS_NEVER_FAILED</td>
+<td>Failure berulang kuat membedakan snapshot posi...</td>
+</tr>
+<tr>
+<th>34</th>
+<td>log_total_prior_events</td>
+<td>total_prior_events</td>
+<td>COUNT</td>
+<td>KEEP_BASELINE</td>
+<td>LOG1P</td>
+<td>ZERO_IS_VALID</td>
+<td>IV tinggi; intensitas histori tanpa dominasi o...</td>
+</tr>
+<tr>
+<th>35</th>
+<td>installation_age_band</td>
+<td>days_since_installation</td>
+<td>DURATION</td>
+<td>KEEP_BASELINE</td>
+<td>BUSINESS_BINS</td>
+<td>UNKNOWN_CATEGORY</td>
+<td>Menangkap hubungan umur non-linear yang tidak ...</td>
+</tr>
+<tr>
+<th>36</th>
+<td>log_days_since_installation</td>
+<td>days_since_installation</td>
+<td>DURATION</td>
+<td>KEEP_BASELINE</td>
+<td>LOG1P</td>
+<td>NOT_NULL_BY_COHORT</td>
+<td>Umur cycle informatif tetapi sangat right-skewed</td>
+</tr>
+<tr>
+<th>37</th>
+<td>log_days_since_last_corrective</td>
+<td>days_since_last_corrective</td>
+<td>DURATION</td>
+<td>KEEP_BASELINE</td>
+<td>LOG1P_PLUS_FLAG</td>
+<td>ZERO_PLUS_HAS_PRIOR_FLAG</td>
+<td>Screening IV tertinggi; missing berarti belum ...</td>
+</tr>
+<tr>
+<th>38</th>
+<td>day_of_week_cos</td>
+<td>observation_day_of_week</td>
+<td>CALENDAR</td>
+<td>KEEP_CHALLENGER</td>
+<td>CYCLIC_COS</td>
+<td>NOT_NULL</td>
+<td>Pasangan day_of_week_sin</td>
+</tr>
+<tr>
+<th>39</th>
+<td>day_of_week_sin</td>
+<td>observation_day_of_week</td>
+<td>CALENDAR</td>
+<td>KEEP_CHALLENGER</td>
+<td>CYCLIC_SIN</td>
+<td>NOT_NULL</td>
+<td>Efek jadwal mungkin ada, tetapi dapat menjadi ...</td>
+</tr>
+<tr>
+<th>40</th>
+<td>last_status_category</td>
+<td>last_status_clean</td>
+<td>CATEGORICAL</td>
+<td>KEEP_CHALLENGER</td>
+<td>ONE_HOT_RARE_GROUP</td>
+<td>UNKNOWN_CATEGORY</td>
+<td>Point-in-time valid, tetapi perlu audit apakah...</td>
+</tr>
+<tr>
+<th>41</th>
+<td>location_category</td>
+<td>last_place_clean</td>
+<td>CATEGORICAL</td>
+<td>KEEP_CHALLENGER</td>
+<td>ONE_HOT_RARE_GROUP</td>
+<td>UNKNOWN_CATEGORY</td>
+<td>Coverage tinggi dan rate berbeda, tetapi perlu...</td>
+</tr>
+<tr>
+<th>42</th>
+<td>log_days_at_last_location</td>
+<td>days_at_last_location</td>
+<td>DURATION</td>
+<td>KEEP_CHALLENGER</td>
+<td>LOG1P</td>
+<td>ZERO_PLUS_MISSING_FLAG</td>
+<td>Informatif tetapi sangat berkorelasi dengan um...</td>
+</tr>
+<tr>
+<th>43</th>
+<td>log_days_since_last_event</td>
+<td>days_since_last_event</td>
+<td>DURATION</td>
+<td>KEEP_CHALLENGER</td>
+<td>LOG1P</td>
+<td>ZERO_PLUS_MISSING_FLAG</td>
+<td>Informatif tetapi hampir duplikat umur install...</td>
+</tr>
+<tr>
+<th>44</th>
+<td>terminal_model_category</td>
+<td>terminal_model_code</td>
+<td>HIERARCHY</td>
+<td>KEEP_CHALLENGER</td>
+<td>ONE_HOT_RARE_GROUP</td>
+<td>UNKNOWN_CATEGORY</td>
+<td>Lebih detail daripada tipe terminal, tetapi ra...</td>
+</tr>
+<tr>
+<th>45</th>
+<td>terminal_type_category</td>
+<td>terminal_type</td>
+<td>HIERARCHY</td>
+<td>KEEP_CHALLENGER</td>
+<td>ONE_HOT</td>
+<td>UNKNOWN_CATEGORY</td>
+<td>M2 tidak memberi lift test yang stabil; tetap ...</td>
+</tr>
+<tr>
+<th>46</th>
+<td>part_location_interaction</td>
+<td>part_model_code + last_place_clean</td>
+<td>INTERACTION</td>
+<td>KEEP_CHALLENGER</td>
+<td>CONCAT_RARE_GROUP</td>
+<td>UNKNOWN_CATEGORY</td>
+<td>Menguji risiko kombinasi model-lokasi tanpa me...</td>
+</tr>
+<tr>
+<th>47</th>
+<td>part_terminal_type_interaction</td>
+<td>part_model_code + terminal_type</td>
+<td>INTERACTION</td>
+<td>KEEP_CHALLENGER</td>
+<td>CONCAT_RARE_GROUP</td>
+<td>UNKNOWN_CATEGORY</td>
+<td>Compatibility PART-terminal dapat non-linear; ...</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Fitur dibuang</th>
+<th>Sumber</th>
+<th>Kelompok</th>
+<th>Keputusan</th>
+<th>Transformasi</th>
+<th>Penanganan missing</th>
+<th>Alasan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>5</th>
+<td>cycle_end_and_observability</td>
+<td>cycle_end_* / is_*observable</td>
+<td>LEAKAGE</td>
+<td>DROP_LEAKAGE</td>
+<td>NONE</td>
+<td>NOT_APPLICABLE</td>
+<td>Menjelaskan bagaimana label masa depan dapat d...</td>
+</tr>
+<tr>
+<th>6</th>
+<td>future_failure_columns</td>
+<td>next_failure_*</td>
+<td>LEAKAGE</td>
+<td>DROP_LEAKAGE</td>
+<td>NONE</td>
+<td>NOT_APPLICABLE</td>
+<td>Berisi jawaban atau informasi setelah snapshot</td>
+</tr>
+<tr>
+<th>7</th>
+<td>installed_on</td>
+<td>installed_on</td>
+<td>RAW_DATETIME</td>
+<td>DROP_RAW</td>
+<td>DERIVE_DURATION_ONLY</td>
+<td>NOT_NULL</td>
+<td>Timestamp absolut mendorong memorisasi era dan...</td>
+</tr>
+<tr>
+<th>8</th>
+<td>observation_date</td>
+<td>observation_date</td>
+<td>RAW_DATETIME</td>
+<td>DROP_RAW</td>
+<td>DERIVE_CALENDAR_ONLY</td>
+<td>NOT_NULL</td>
+<td>Tanggal absolut tidak dipakai sebagai predictor</td>
+</tr>
+<tr>
+<th>9</th>
+<td>is_weekend</td>
+<td>is_weekend</td>
+<td>CALENDAR</td>
+<td>DROP_REDUNDANT</td>
+<td>NONE</td>
+<td>NOT_NULL</td>
+<td>Redundan dengan hari dalam minggu dan berpoten...</td>
+</tr>
+<tr>
+<th>10</th>
+<td>observation_quarter</td>
+<td>observation_quarter</td>
+<td>CALENDAR</td>
+<td>DROP_REDUNDANT</td>
+<td>NONE</td>
+<td>NOT_NULL</td>
+<td>Redundan dengan representasi siklik bulan</td>
+</tr>
+<tr>
+<th>11</th>
+<td>days_since_last_failure</td>
+<td>days_since_last_failure</td>
+<td>DURATION</td>
+<td>DROP_REDUNDANT</td>
+<td>NONE</td>
+<td>STRUCTURAL_MISSING</td>
+<td>Missing 94% dan berkorelasi tinggi dengan corr...</td>
+</tr>
+<tr>
+<th>12</th>
+<td>prior_corrective_180d</td>
+<td>prior_corrective_180d</td>
+<td>COUNT</td>
+<td>DROP_REDUNDANT_WEAK</td>
+<td>NONE</td>
+<td>ZERO_IS_VALID</td>
+<td>IV nol dan redundan dengan count total/30 hari</td>
+</tr>
+<tr>
+<th>13</th>
+<td>prior_corrective_90d</td>
+<td>prior_corrective_90d</td>
+<td>COUNT</td>
+<td>DROP_REDUNDANT_WEAK</td>
+<td>NONE</td>
+<td>ZERO_IS_VALID</td>
+<td>IV nol dan redundan dengan count total/30 hari</td>
+</tr>
+<tr>
+<th>14</th>
+<td>days_at_last_location</td>
+<td>days_at_last_location</td>
+<td>DURATION</td>
+<td>DROP_REPLACED</td>
+<td>REPLACED_BY_OPTIONAL_LOG</td>
+<td>STRUCTURAL_MISSING</td>
+<td>Raw scale hampir duplikat last-event/installat...</td>
+</tr>
+<tr>
+<th>15</th>
+<td>days_since_last_event</td>
+<td>days_since_last_event</td>
+<td>DURATION</td>
+<td>DROP_REPLACED</td>
+<td>REPLACED_BY_OPTIONAL_LOG</td>
+<td>STRUCTURAL_MISSING</td>
+<td>Raw scale sangat skewed dan hampir duplikat umur</td>
+</tr>
+<tr>
+<th>16</th>
+<td>prior_events_30d</td>
+<td>prior_events_30d</td>
+<td>COUNT</td>
+<td>DROP_WEAK</td>
+<td>NONE</td>
+<td>ZERO_IS_VALID</td>
+<td>IV univariat nol pada train</td>
+</tr>
+<tr>
+<th>17</th>
+<td>prior_events_90d</td>
+<td>prior_events_90d</td>
+<td>COUNT</td>
+<td>DROP_WEAK</td>
+<td>NONE</td>
+<td>ZERO_IS_VALID</td>
+<td>IV univariat nol; window 180 hari dipilih seba...</td>
+</tr>
+<tr>
+<th>18</th>
+<td>prior_preventive_30d_90d_180d</td>
+<td>prior_preventive_*</td>
+<td>COUNT</td>
+<td>DROP_WEAK</td>
+<td>NONE</td>
+<td>ZERO_IS_VALID</td>
+<td>Window preventive tidak menunjukkan separation...</td>
+</tr>
+<tr>
+<th>19</th>
+<td>prior_preventive_count</td>
+<td>prior_preventive_count</td>
+<td>COUNT</td>
+<td>DROP_WEAK</td>
+<td>NONE</td>
+<td>ZERO_IS_VALID</td>
+<td>IV nol dan event preventive sangat jarang</td>
+</tr>
+<tr>
+<th>20</th>
+<td>prior_relocation_count</td>
+<td>prior_relocation_count</td>
+<td>COUNT</td>
+<td>DROP_WEAK</td>
+<td>NONE</td>
+<td>ZERO_IS_VALID</td>
+<td>IV sekitar 0.001; tidak layak menambah komplek...</td>
+</tr>
+<tr>
+<th>21</th>
+<td>prior_repair_process_count</td>
+<td>prior_repair_process_count</td>
+<td>COUNT</td>
+<td>DROP_WEAK_DRIFT</td>
+<td>NONE</td>
+<td>ZERO_IS_VALID</td>
+<td>IV nol dan definisi proses berubah sejak 2025</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Quality check</th>
+<th>Nilai</th>
+<th>Ekspektasi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>baseline_feature_rows</td>
+<td>1406086</td>
+<td>Harus sama dengan seluruh item_observation_30d</td>
+</tr>
+<tr>
+<th>1</th>
+<td>duplicate_feature_keys</td>
+<td>0</td>
+<td>Harus nol</td>
+</tr>
+<tr>
+<th>2</th>
+<td>label_rows</td>
+<td>1406086</td>
+<td>Harus sama dengan baseline_feature_rows</td>
+</tr>
+<tr>
+<th>3</th>
+<td>null_core_categories</td>
+<td>0</td>
+<td>Harus nol</td>
+</tr>
+<tr>
+<th>4</th>
+<td>null_engineered_numeric</td>
+<td>0</td>
+<td>Harus nol</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>Split waktu</th>
+<th>Snapshot</th>
+<th>Positif</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>EXCLUDED_LABEL_QUALITY</td>
+<td>81941</td>
+<td>0</td>
+</tr>
+<tr>
+<th>1</th>
+<td>EXCLUDED_PRE_2014</td>
+<td>23599</td>
+<td>34</td>
+</tr>
+<tr>
+<th>2</th>
+<td>EXCLUDED_TRAIN_EMBARGO</td>
+<td>13774</td>
+<td>34</td>
+</tr>
+<tr>
+<th>3</th>
+<td>EXCLUDED_VALIDATION_EMBARGO</td>
+<td>15066</td>
+<td>107</td>
+</tr>
+<tr>
+<th>4</th>
+<td>TEST_2026</td>
+<td>99595</td>
+<td>902</td>
+</tr>
+<tr>
+<th>5</th>
+<td>TRAIN_2014_2024</td>
+<td>1009744</td>
+<td>3852</td>
+</tr>
+<tr>
+<th>6</th>
+<td>VALIDATION_2025</td>
+<td>162367</td>
+<td>947</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>installation_cycle_id</th>
+<th>item_identifier_clean</th>
+<th>observation_on</th>
+<th>part_model_category</th>
+<th>client_category</th>
+<th>log_days_since_installation</th>
+<th>installation_age_band</th>
+<th>log_total_prior_events</th>
+<th>log_prior_failure_count</th>
+<th>has_prior_failure</th>
+<th>log_prior_corrective_count</th>
+<th>has_prior_corrective</th>
+<th>log_days_since_last_corrective</th>
+<th>log_prior_distinct_places</th>
+<th>log_prior_corrective_30d</th>
+<th>log_prior_failure_365d</th>
+<th>log_prior_events_180d</th>
+<th>month_sin</th>
+<th>month_cos</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>012503400100096:1</td>
+<td>012503400100096</td>
+<td>2026-08-03 10:59:29.000</td>
+<td>0120201</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>5.3518581334760665</td>
+<td>181_365_DAYS</td>
+<td>1.7917594692280550</td>
+<td>0E-16</td>
+<td>False</td>
+<td>1.6094379124341004</td>
+<td>True</td>
+<td>5.3518581334760665</td>
+<td>1.0986122886681097</td>
+<td>0E-16</td>
+<td>0E-16</td>
+<td>0E-16</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+<tr>
+<th>1</th>
+<td>012602300300693:2</td>
+<td>012602300300693</td>
+<td>2026-08-03 10:59:18.966</td>
+<td>0120201</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>0E-24</td>
+<td>000_090_DAYS</td>
+<td>3.0445224377234230</td>
+<td>0.6931471805599453</td>
+<td>True</td>
+<td>1.9459101490553133</td>
+<td>True</td>
+<td>0E-24</td>
+<td>1.3862943611198906</td>
+<td>1.9459101490553133</td>
+<td>0.6931471805599453</td>
+<td>2.9957322735539910</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+<tr>
+<th>2</th>
+<td>012503100600288:2</td>
+<td>012503100600288</td>
+<td>2026-08-03 10:54:41.000</td>
+<td>0120204</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>5.7071102647488757</td>
+<td>181_365_DAYS</td>
+<td>2.9444389791664405</td>
+<td>0.6931471805599453</td>
+<td>True</td>
+<td>1.7917594692280550</td>
+<td>True</td>
+<td>5.7071102647488757</td>
+<td>1.6094379124341004</td>
+<td>0E-16</td>
+<td>0.6931471805599453</td>
+<td>0E-16</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+<tr>
+<th>3</th>
+<td>012503100600893:3</td>
+<td>012503100600893</td>
+<td>2026-08-03 10:47:04.102</td>
+<td>0120201</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>0E-24</td>
+<td>000_090_DAYS</td>
+<td>3.3322045101752039</td>
+<td>1.0986122886681097</td>
+<td>True</td>
+<td>2.4849066497880003</td>
+<td>True</td>
+<td>0E-24</td>
+<td>1.6094379124341004</td>
+<td>2.4849066497880003</td>
+<td>1.0986122886681097</td>
+<td>3.1354942159291497</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+<tr>
+<th>4</th>
+<td>011202400101483:1</td>
+<td>011202400101483</td>
+<td>2026-08-03 10:43:42.175</td>
+<td>0521202</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>0E-24</td>
+<td>000_090_DAYS</td>
+<td>2.8332133440562161</td>
+<td>0.6931471805599453</td>
+<td>True</td>
+<td>1.9459101490553133</td>
+<td>True</td>
+<td>0E-24</td>
+<td>1.3862943611198906</td>
+<td>1.9459101490553133</td>
+<td>0.6931471805599453</td>
+<td>2.7725887222397812</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+<tr>
+<th>5</th>
+<td>012503100600298:3</td>
+<td>012503100600298</td>
+<td>2026-08-03 10:27:10.326</td>
+<td>0120204</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>3.4339872044851462</td>
+<td>000_090_DAYS</td>
+<td>3.3322045101752039</td>
+<td>1.0986122886681097</td>
+<td>True</td>
+<td>2.4849066497880003</td>
+<td>True</td>
+<td>3.4339872044851462</td>
+<td>1.3862943611198906</td>
+<td>0E-16</td>
+<td>1.0986122886681097</td>
+<td>2.7725887222397812</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+<tr>
+<th>6</th>
+<td>011202400102838:3</td>
+<td>011202400102838</td>
+<td>2026-08-03 10:27:08.535</td>
+<td>0521202</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>0E-24</td>
+<td>000_090_DAYS</td>
+<td>3.6635616461296464</td>
+<td>1.3862943611198906</td>
+<td>True</td>
+<td>2.8903717578961647</td>
+<td>True</td>
+<td>0E-24</td>
+<td>1.3862943611198906</td>
+<td>1.9459101490553133</td>
+<td>1.3862943611198906</td>
+<td>3.6375861597263858</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+<tr>
+<th>7</th>
+<td>012503100600414:4</td>
+<td>012503100600414</td>
+<td>2026-08-03 10:23:47.890</td>
+<td>1521405</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>3.4339872044851462</td>
+<td>000_090_DAYS</td>
+<td>3.6888794541139363</td>
+<td>1.3862943611198906</td>
+<td>True</td>
+<td>2.8903717578961647</td>
+<td>True</td>
+<td>3.4339872044851462</td>
+<td>1.3862943611198906</td>
+<td>0E-16</td>
+<td>1.0986122886681097</td>
+<td>3.3322045101752039</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+<tr>
+<th>8</th>
+<td>011201100101372:2</td>
+<td>011201100101372</td>
+<td>2026-08-03 10:18:16.875</td>
+<td>0521201</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>0E-24</td>
+<td>000_090_DAYS</td>
+<td>2.7080502011022101</td>
+<td>0.6931471805599453</td>
+<td>True</td>
+<td>1.9459101490553133</td>
+<td>True</td>
+<td>0E-24</td>
+<td>1.3862943611198906</td>
+<td>1.7917594692280550</td>
+<td>0E-16</td>
+<td>2.0794415416798359</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+<tr>
+<th>9</th>
+<td>011201100201189:2</td>
+<td>011201100201189</td>
+<td>2026-08-03 10:10:17.000</td>
+<td>0620505</td>
+<td>KERETA COMMUTER INDONESIA (KCI)</td>
+<td>6.0426328336823814</td>
+<td>366_730_DAYS</td>
+<td>2.5649493574615367</td>
+<td>0.6931471805599453</td>
+<td>True</td>
+<td>2.3025850929940457</td>
+<td>True</td>
+<td>6.0426328336823814</td>
+<td>1.0986122886681097</td>
+<td>0E-16</td>
+<td>0E-16</td>
+<td>0E-16</td>
+<td>-0.5</td>
+<td>-0.866025</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-OutputArea-output" data-mime-type="text/markdown" tabindex="0">
+<p><strong>Output siap modeling:</strong> <strong>16 fitur baseline</strong>, <strong>10 kandidat challenger</strong>, dan <strong>17 fitur/kelompok raw yang dibuang atau diganti transformasi</strong>. Quality gate memastikan jumlah feature row sama dengan label, key ganda nol, seluruh fitur inti/non-null hasil engineering lengkap, dan tidak ada nama kolom target/future pada feature views.</p>
+<p>Join training yang diwajibkan: <code>(installation_cycle_id, item_identifier_clean, observation_on)</code>, filter <code>temporal_split</code>, lalu pilih view baseline atau challenger—jangan membaca <code>failure_30d_model_audit</code> sebagai matriks training.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
 <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=chapter-10-stability">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="10.-Stability,-keputusan,-dan-kesimpulan">10. Stability, keputusan, dan kesimpulan<a class="anchor-link" href="#10.-Stability,-keputusan,-dan-kesimpulan">¶</a></h2><p><strong>Pertanyaan:</strong> apakah fitur dan risiko stabil setelah periode train? PSI 2025/2026
+<h2 id="11.-Stability,-keputusan,-dan-kesimpulan">11. Stability, keputusan, dan kesimpulan<a class="anchor-link" href="#11.-Stability,-keputusan,-dan-kesimpulan">¶</a></h2><p><strong>Pertanyaan:</strong> apakah fitur dan risiko stabil setelah periode train? PSI 2025/2026
 dibandingkan terhadap 2024, lalu hasil model/lokasi, anomaly, cleaning decision,
 dan next action dirangkum. Tahun 2026 masih parsial sampai cutoff data.</p>
 </div>
@@ -13044,7 +14875,7 @@ dan next action dirangkum. Tahun 2026 masih parsial sampai cutoff data.</p>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="10.1-Feature-drift-dan-stability-model/lokasi">10.1 Feature drift dan stability model/lokasi<a class="anchor-link" href="#10.1-Feature-drift-dan-stability-model/lokasi">¶</a></h3><p>PSI &lt;0,10 relatif stabil, 0,10-0,25 perlu dipantau, dan &gt;=0,25 menunjukkan
+<h3 id="11.1-Feature-drift-dan-stability-model/lokasi">11.1 Feature drift dan stability model/lokasi<a class="anchor-link" href="#11.1-Feature-drift-dan-stability-model/lokasi">¶</a></h3><p>PSI &lt;0,10 relatif stabil, 0,10-0,25 perlu dipantau, dan &gt;=0,25 menunjukkan
 drift besar. Stability risiko tetap dilihat per model dan lokasi.</p>
 </div>
 </div>
@@ -13054,7 +14885,7 @@ drift besar. Stability risiko tetap dilihat per model dan lokasi.</p>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [22]:</div>
+<div class="jp-InputPrompt jp-InputArea-prompt">In [25]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
 <div class="highlight hl-ipython3"><pre><span></span><span class="n">monthly_feature_stability</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s2">"SELECT * FROM analytics.eda_feature_stability_monthly WHERE observation_month_start &gt;= DATE '2024-01-01' ORDER BY feature_name, observation_month_start"</span><span class="p">)</span>
@@ -13464,7 +15295,7 @@ drift besar. Stability risiko tetap dilihat per model dan lokasi.</p>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="10.2-Anomali,-cleaning-decision,-dan-feature-decision">10.2 Anomali, cleaning decision, dan feature decision<a class="anchor-link" href="#10.2-Anomali,-cleaning-decision,-dan-feature-decision">¶</a></h3><p>Lonjakan aktivitas, timeline aneh, serta daftar cleaning ditampilkan bersama
+<h3 id="11.2-Anomali,-cleaning-decision,-dan-feature-decision">11.2 Anomali, cleaning decision, dan feature decision<a class="anchor-link" href="#11.2-Anomali,-cleaning-decision,-dan-feature-decision">¶</a></h3><p>Lonjakan aktivitas, timeline aneh, serta daftar cleaning ditampilkan bersama
 tindakan pipeline. Keputusan feature engineering di sini adalah rekomendasi
 berdasarkan EDA, belum transformasi modeling final.</p>
 </div>
@@ -13475,7 +15306,7 @@ berdasarkan EDA, belum transformasi modeling final.</p>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [23]:</div>
+<div class="jp-InputPrompt jp-InputArea-prompt">In [26]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
 <div class="highlight hl-ipython3"><pre><span></span><span class="n">timeline_anomaly</span> <span class="o">=</span> <span class="n">query</span><span class="p">(</span><span class="s2">"""WITH ordered AS (SELECT o.*, MAX(created_on) FILTER (WHERE status_clean='INSTALLED') OVER (PARTITION BY item_identifier_clean ORDER BY created_on, journey_id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) prior_installed_on FROM analytics.item_journey_operational_timeline o) SELECT COUNT(*) FILTER (WHERE status_clean='DISMANTLED' AND prior_installed_on IS NULL) dismantle_without_prior_install, COUNT(*) FILTER (WHERE days_since_previous_operational_event&lt;0) negative_gap, COUNT(*) FILTER (WHERE days_since_previous_operational_event=0) zero_gap, COUNT(*) FILTER (WHERE days_since_previous_operational_event&gt;3652.5) gap_gt_10y FROM ordered"""</span><span class="p">)</span>
@@ -14471,7 +16302,7 @@ berdasarkan EDA, belum transformasi modeling final.</p>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="10.3-Kesimpulan-dan-next-action">10.3 Kesimpulan dan next action<a class="anchor-link" href="#10.3-Kesimpulan-dan-next-action">¶</a></h3><p>Kesimpulan berikut dibuat dari seluruh chapter. Angka detail dapat berubah ketika
+<h3 id="11.3-Kesimpulan-dan-next-action">11.3 Kesimpulan dan next action<a class="anchor-link" href="#11.3-Kesimpulan-dan-next-action">¶</a></h3><p>Kesimpulan berikut dibuat dari seluruh chapter. Angka detail dapat berubah ketika
 pipeline diperbarui, sehingga executive summary terpisah dihasilkan otomatis
 dari view database saat report diekspor.</p>
 </div>
@@ -14482,7 +16313,7 @@ dari view database saat report diekspor.</p>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [24]:</div>
+<div class="jp-InputPrompt jp-InputArea-prompt">In [27]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
 <div class="highlight hl-ipython3"><pre><span></span><span class="n">weekly</span> <span class="o">=</span> <span class="n">cadence</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">cadence</span><span class="o">.</span><span class="n">cadence_days</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="mi">7</span><span class="p">)]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>

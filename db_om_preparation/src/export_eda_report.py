@@ -27,9 +27,20 @@ def export_executive_summary(output_path) -> None:
                     (SELECT COUNT(*) FROM analytics.item_observation_30d
                      WHERE is_training_eligible AND target_failure_30d),
                     (SELECT MAX(created_on)::date
-                     FROM analytics.item_journey_operational_timeline)
+                     FROM analytics.item_journey_operational_timeline),
+                    (SELECT COUNT(*)
+                     FROM analytics.eda_item_observation_30d_hierarchy
+                     WHERE is_training_eligible AND is_parent_link_valid),
+                    (SELECT cramers_v
+                     FROM analytics.eda_bivariate_association_summary
+                     WHERE association = 'TERMINAL_TYPE_VS_TARGET'),
+                    (SELECT cramers_v
+                     FROM analytics.eda_bivariate_association_summary
+                     WHERE association = 'PART_MODEL_VS_TERMINAL_TYPE')
             """)
-            journey, operational, cycles, failures, eligible, positives, cutoff = cur.fetchone()
+            (journey, operational, cycles, failures, eligible, positives, cutoff,
+             terminal_linked, terminal_target_v,
+             part_terminal_v) = cur.fetchone()
 
             cur.execute("""
                 SELECT cycle_quality_status, COUNT(*)
@@ -51,8 +62,22 @@ def export_executive_summary(output_path) -> None:
             """)
             failure_basis = dict(cur.fetchall())
 
+            cur.execute("""
+                SELECT decision, COUNT(*)
+                FROM analytics.failure_30d_feature_catalog
+                GROUP BY decision
+            """)
+            feature_decisions = dict(cur.fetchall())
+
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM analytics.failure_30d_baseline_features
+            """)
+            engineered_rows = cur.fetchone()[0]
+
     negatives = eligible - positives
     positive_rate = 100.0 * positives / eligible if eligible else 0
+    terminal_coverage = 100.0 * terminal_linked / eligible if eligible else 0
     reinstall_unknown = cycle_quality.get(
         "UNKNOWN_REINSTALL_WITHOUT_RECORDED_FAILURE", 0
     )
@@ -105,22 +130,49 @@ baseline model.
 - Nilai mentah, canonical, metode mapping, dan approval alias tetap tersedia
   untuk audit.
 
+## Hierarki PART-TERMINAL
+
+- Snapshot dengan parent TERMINAL valid: **{_format_number(terminal_linked)}
+  ({terminal_coverage:.4f}%)**.
+- Tipe TERMINAL mempunyai asosiasi bivariat kecil terhadap target
+  (Cramer's V **{float(terminal_target_v):.4f}**).
+- Model PART dan tipe TERMINAL berasosiasi kuat
+  (Cramer's V **{float(part_terminal_v):.4f}**), sehingga rate per terminal
+  tidak boleh diartikan sebagai efek independen tanpa adjustment multivariat.
+- Notebook membandingkan Logistic Regression bertingkat: PART-only,
+  PART+TERMINAL, dan adjusted operational history dengan split waktu.
+
 ## Keputusan sebelum baseline
 
 1. Gunakan split waktu train 2014-2024, validation 2025, dan test 2026 dengan
    embargo target 30 hari; jangan gunakan random split.
-2. Gunakan feature whitelist dari `analytics.item_observation_30d_features` dan
-   label dari `analytics.item_observation_30d_labels`.
+2. Gunakan feature-only cache `analytics.failure_30d_baseline_features` dan
+   label terpisah dari `analytics.failure_30d_model_labels`.
 3. Nilai utama model: PR-AUC, recall, precision, ROC-AUC, calibration, confusion
    matrix, dan jumlah alarm per 1.000 snapshot; accuracy tidak berdiri sendiri.
 4. Audit missing struktural, redundansi, IV tinggi, dan drift sebelum memilih
    fitur baseline.
 
+## Feature engineering
+
+- Cache baseline berisi **{_format_number(engineered_rows)} snapshot** dan
+  **{_format_number(feature_decisions.get('KEEP_BASELINE', 0))} fitur**.
+- **{_format_number(feature_decisions.get('KEEP_CHALLENGER', 0))} fitur
+  challenger** disediakan untuk pengujian incremental, bukan dicampurkan
+  langsung ke baseline.
+- Transformasi utama: `log1p` untuk count/duration yang skewed, indikator
+  histori untuk missing struktural, bin umur, serta sin-cos bulan.
+- Identifier, timestamp absolut, fitur lemah/redundan, kualitas relasi, dan
+  seluruh kolom future/observability tidak menjadi predictor baseline.
+- Keputusan lengkap dan alasannya tersedia pada
+  `analytics.failure_30d_feature_catalog`.
+
 ## Status
 
-Data siap dilanjutkan ke **feature engineering dan baseline modeling**, tetapi
-belum dinyatakan siap produksi. Detail tabel, grafik, IV, korelasi, lifecycle,
-dan PSI tersedia di `reports/failure_eda.html`.
+Feature engineering baseline selesai dan data siap dilanjutkan ke **baseline
+modeling**, tetapi belum dinyatakan siap produksi. Detail tabel, grafik, IV,
+korelasi, lifecycle, PSI, dan keputusan fitur tersedia di
+`reports/failure_eda.html`.
 """
     output_path.write_text(content, encoding="utf-8")
 

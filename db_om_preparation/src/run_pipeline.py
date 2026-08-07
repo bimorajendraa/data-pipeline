@@ -23,6 +23,7 @@ SQL_FILES = [
     "11_item_installation_cycle.sql",
     "12_item_observation_dataset.sql",
     "13_eda_views.sql",
+    "14_feature_engineering.sql",
 ]
 
 # Guard tambahan: file pipeline tidak boleh menulis ke tiga schema sumber.

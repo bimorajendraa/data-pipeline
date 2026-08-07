@@ -24,6 +24,22 @@ BEGIN
 
     -- Objek EDA tahap 11-13 bergantung pada failure/timeline cache. Hapus
     -- terlebih dahulu agar pipeline lengkap tetap idempotent saat dijalankan ulang.
+    -- Layer modeling tahap 14 harus turun sebelum hierarchy/observation.
+    EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_model_audit';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_feature_quality_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_challenger_features';
+    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.failure_30d_baseline_features';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_model_labels';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_feature_catalog';
+
+    -- Hierarchy PART-TERMINAL tahap 13 bergantung pada observation dataset.
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_bivariate_association_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_bivariate_terminal_model_target';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_bivariate_terminal_type_target';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_part_terminal_structure_summary';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.eda_item_observation_30d_hierarchy';
+    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.eda_part_terminal_cycle_link';
+
     EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.eda_feature_stability_monthly';
     EXECUTE 'DROP VIEW IF EXISTS analytics.eda_target_class_distribution';
     EXECUTE 'DROP VIEW IF EXISTS analytics.eda_snapshot_master_coverage';

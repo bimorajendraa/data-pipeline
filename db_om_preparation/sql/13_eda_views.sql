@@ -724,7 +724,328 @@ CROSS JOIN boundary b;
 
 
 -- =========================================================
--- F. REFRESH PROCEDURE
+-- F. HIERARKI PART-TERMINAL DAN ANALISIS BIVARIAT
+-- =========================================================
+-- host_serial_code pada journey adalah serial versi PART itu sendiri. Parent
+-- perangkat berada di t_item_request_out.parent_serial_code. Relasi memakai
+-- serial PART + WO installation agar satu PART yang berpindah terminal tidak
+-- ditempelkan permanen ke parent yang salah.
+DROP VIEW IF EXISTS analytics.failure_30d_model_audit;
+DROP VIEW IF EXISTS analytics.failure_30d_feature_quality_summary;
+DROP VIEW IF EXISTS analytics.failure_30d_challenger_features;
+DROP VIEW IF EXISTS analytics.failure_30d_model_labels;
+DROP VIEW IF EXISTS analytics.failure_30d_feature_catalog;
+DO $drop_baseline_features$
+DECLARE object_kind "char";
+BEGIN
+    SELECT c.relkind INTO object_kind
+    FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'analytics'
+      AND c.relname = 'failure_30d_baseline_features';
+    IF object_kind = 'v' THEN
+        EXECUTE 'DROP VIEW analytics.failure_30d_baseline_features';
+    ELSIF object_kind = 'm' THEN
+        EXECUTE 'DROP MATERIALIZED VIEW analytics.failure_30d_baseline_features';
+    END IF;
+END $drop_baseline_features$;
+DROP VIEW IF EXISTS analytics.eda_bivariate_association_summary;
+DROP VIEW IF EXISTS analytics.eda_bivariate_terminal_model_target;
+DROP VIEW IF EXISTS analytics.eda_bivariate_terminal_type_target;
+DROP VIEW IF EXISTS analytics.eda_part_terminal_structure_summary;
+DROP VIEW IF EXISTS analytics.eda_item_observation_30d_hierarchy;
+DO $drop_cycle_parent$
+DECLARE object_kind "char";
+BEGIN
+    SELECT c.relkind INTO object_kind
+    FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'analytics'
+      AND c.relname = 'eda_part_terminal_cycle_link';
+    IF object_kind = 'v' THEN
+        EXECUTE 'DROP VIEW analytics.eda_part_terminal_cycle_link';
+    ELSIF object_kind = 'm' THEN
+        EXECUTE 'DROP MATERIALIZED VIEW analytics.eda_part_terminal_cycle_link';
+    END IF;
+END $drop_cycle_parent$;
+
+CREATE MATERIALIZED VIEW analytics.eda_part_terminal_cycle_link AS
+SELECT
+    c.installation_cycle_id,
+    c.item_identifier_clean,
+    c.item_model_code_clean AS part_model_code,
+    c.item_pairing_code_clean AS part_pairing_code,
+    c.host_serial_code_clean AS part_serial_version,
+    c.installed_on,
+    j.wo_code_clean AS installation_wo_code,
+    r.item_request_out_id,
+    r.created_on AS parent_link_recorded_on,
+    analytics.clean_code(r.parent_serial_code) AS terminal_serial_version,
+    NULLIF(SPLIT_PART(analytics.clean_code(r.parent_serial_code), '-', 1), '')
+        AS terminal_model_code,
+    NULLIF(SPLIT_PART(analytics.clean_code(r.parent_serial_code), '-', 2), '')
+        AS terminal_pairing_code,
+    NULLIF(SPLIT_PART(analytics.clean_code(r.parent_serial_code), '-', 3), '')
+        AS terminal_repair_seq,
+    analytics.clean_code(pm.item_category) AS parent_item_category,
+    analytics.clean_text(pm.item_type) AS terminal_type,
+    analytics.clean_text(pm.item_model_name) AS terminal_model_name,
+    ti.item_id AS terminal_inventory_item_id,
+    r.item_request_out_id IS NOT NULL AS is_parent_request_link_found,
+    NULLIF(BTRIM(r.parent_serial_code), '') IS NOT NULL
+        AS is_parent_serial_present,
+    analytics.clean_code(pm.item_category) = 'TERMINAL'
+        AS is_parent_master_terminal,
+    ti.item_id IS NOT NULL AS is_parent_inventory_terminal,
+    analytics.clean_code(pm.item_category) = 'TERMINAL'
+      AND ti.item_id IS NOT NULL AS is_parent_link_valid,
+    r.created_on > c.installed_on AS is_parent_link_recorded_after_installation,
+    EXTRACT(EPOCH FROM (r.created_on - c.installed_on)) / 86400.0
+        AS parent_link_recording_delay_days,
+    CASE
+        WHEN r.item_request_out_id IS NULL THEN 'UNMATCHED_INSTALLATION_REQUEST'
+        WHEN NULLIF(BTRIM(r.parent_serial_code), '') IS NULL
+            THEN 'MISSING_PARENT_SERIAL'
+        WHEN analytics.clean_code(pm.item_category) IS DISTINCT FROM 'TERMINAL'
+            THEN 'PARENT_NOT_TERMINAL'
+        WHEN ti.item_id IS NULL THEN 'PARENT_TERMINAL_NOT_IN_INVENTORY'
+        WHEN r.created_on > c.installed_on
+            THEN 'VALID_RELATION_RECORDED_AFTER_INSTALLATION'
+        ELSE 'VALID_POINT_IN_TIME_RELATION'
+    END AS parent_link_quality_status
+FROM analytics.item_installation_cycle c
+JOIN analytics.item_journey_clean j
+  ON j.journey_id = c.installed_journey_id
+LEFT JOIN journal.t_item_request_out r
+  ON r.item_serial_code_out = j.host_serial_code_clean
+ AND r.wo_code = j.wo_code_clean
+LEFT JOIN master.t_mtr_item pm
+  ON pm.item_model_code = NULLIF(
+      SPLIT_PART(analytics.clean_code(r.parent_serial_code), '-', 1), ''
+  )
+LEFT JOIN inventory.t_item ti
+  ON ti.item_pairing_code = NULLIF(
+      SPLIT_PART(analytics.clean_code(r.parent_serial_code), '-', 2), ''
+  );
+
+CREATE UNIQUE INDEX eda_part_terminal_cycle_link_key_idx
+    ON analytics.eda_part_terminal_cycle_link (installation_cycle_id);
+CREATE INDEX eda_part_terminal_cycle_link_terminal_idx
+    ON analytics.eda_part_terminal_cycle_link (
+        terminal_pairing_code, installed_on
+    );
+CREATE INDEX eda_part_terminal_cycle_link_part_idx
+    ON analytics.eda_part_terminal_cycle_link (
+        item_identifier_clean, installed_on
+    );
+
+CREATE VIEW analytics.eda_item_observation_30d_hierarchy AS
+SELECT o.*,
+    p.terminal_serial_version,
+    p.terminal_model_code,
+    p.terminal_pairing_code,
+    p.terminal_repair_seq,
+    p.terminal_type,
+    p.terminal_model_name,
+    p.parent_link_recorded_on,
+    p.is_parent_link_valid,
+    p.is_parent_link_recorded_after_installation,
+    p.parent_link_recording_delay_days,
+    p.parent_link_quality_status
+FROM analytics.item_observation_30d o
+LEFT JOIN analytics.eda_part_terminal_cycle_link p
+  USING (installation_cycle_id);
+
+CREATE VIEW analytics.eda_part_terminal_structure_summary AS
+WITH cycle_summary AS (
+    SELECT COUNT(*)::numeric AS cycle_count,
+        COUNT(*) FILTER (WHERE is_parent_link_valid)::numeric AS valid_cycle_count,
+        COUNT(*) FILTER (
+            WHERE is_parent_link_recorded_after_installation
+        )::numeric AS recorded_after_cycle_count,
+        COUNT(DISTINCT item_identifier_clean) FILTER (
+            WHERE is_parent_link_valid
+        )::numeric AS linked_part_count,
+        COUNT(DISTINCT terminal_pairing_code) FILTER (
+            WHERE is_parent_link_valid
+        )::numeric AS linked_terminal_count
+    FROM analytics.eda_part_terminal_cycle_link
+), observation_summary AS (
+    SELECT COUNT(*)::numeric AS observation_count,
+        COUNT(*) FILTER (WHERE is_parent_link_valid)::numeric
+            AS valid_observation_count
+    FROM analytics.eda_item_observation_30d_hierarchy
+    WHERE is_training_eligible
+)
+SELECT 'installation_cycles'::text AS metric, cycle_count AS value,
+    'Seluruh installation cycle PART'::text AS interpretation
+FROM cycle_summary
+UNION ALL SELECT 'valid_parent_terminal_cycles', valid_cycle_count,
+    'Cycle dengan parent yang valid di master dan inventory TERMINAL'
+FROM cycle_summary
+UNION ALL SELECT 'parent_link_recorded_after_installation_cycles',
+    recorded_after_cycle_count,
+    'Relasi historis yang dicatat setelah waktu installation; audit backfill'
+FROM cycle_summary
+UNION ALL SELECT 'linked_unique_parts', linked_part_count,
+    'PART unik yang mempunyai parent TERMINAL valid pada sedikitnya satu cycle'
+FROM cycle_summary
+UNION ALL SELECT 'linked_unique_terminals', linked_terminal_count,
+    'TERMINAL fisik unik yang menjadi parent pada installation cycle'
+FROM cycle_summary
+UNION ALL SELECT 'training_observations', observation_count,
+    'Seluruh snapshot yang layak training'
+FROM observation_summary
+UNION ALL SELECT 'valid_parent_terminal_training_observations',
+    valid_observation_count,
+    'Snapshot training dengan konteks parent TERMINAL valid'
+FROM observation_summary;
+
+CREATE VIEW analytics.eda_bivariate_terminal_type_target AS
+WITH eligible AS (
+    SELECT target_failure_30d,
+        CASE WHEN is_parent_link_valid THEN terminal_type ELSE 'UNMAPPED' END
+            AS feature_value,
+        item_identifier_clean,
+        terminal_pairing_code
+    FROM analytics.eda_item_observation_30d_hierarchy
+    WHERE is_training_eligible
+), overall AS (
+    SELECT COUNT(*)::numeric AS total_n,
+        COUNT(*) FILTER (WHERE target_failure_30d)::numeric AS total_positive
+    FROM eligible
+), grouped AS (
+    SELECT feature_value,
+        COUNT(*)::numeric AS snapshot_count,
+        COUNT(DISTINCT item_identifier_clean)::numeric AS part_count,
+        COUNT(DISTINCT terminal_pairing_code)::numeric AS terminal_count,
+        COUNT(*) FILTER (WHERE target_failure_30d)::numeric AS positive_count
+    FROM eligible
+    GROUP BY feature_value
+), scored AS (
+    SELECT g.*, positive_count / NULLIF(snapshot_count, 0) AS p,
+        o.total_positive / NULLIF(o.total_n, 0) AS overall_p
+    FROM grouped g CROSS JOIN overall o
+)
+SELECT feature_value AS terminal_type,
+    snapshot_count::bigint, part_count::bigint, terminal_count::bigint,
+    positive_count::bigint,
+    ROUND(100.0 * p, 4) AS positive_percentage,
+    ROUND(p / NULLIF(overall_p, 0), 4) AS risk_ratio_to_overall,
+    ROUND(100.0 * GREATEST(0,
+        (p + 3.8416 / (2 * snapshot_count)
+         - 1.96 * SQRT((p * (1-p) + 3.8416 / (4*snapshot_count))
+                       / snapshot_count))
+        / (1 + 3.8416 / snapshot_count)), 4) AS wilson_lower_95_pct,
+    ROUND(100.0 * LEAST(1,
+        (p + 3.8416 / (2 * snapshot_count)
+         + 1.96 * SQRT((p * (1-p) + 3.8416 / (4*snapshot_count))
+                       / snapshot_count))
+        / (1 + 3.8416 / snapshot_count)), 4) AS wilson_upper_95_pct,
+    terminal_count >= 20 AND positive_count >= 10 AS meets_minimum_support
+FROM scored;
+
+CREATE VIEW analytics.eda_bivariate_terminal_model_target AS
+WITH eligible AS (
+    SELECT target_failure_30d,
+        CASE WHEN is_parent_link_valid THEN terminal_model_code END
+            AS terminal_model_code,
+        CASE WHEN is_parent_link_valid THEN terminal_type END AS terminal_type,
+        item_identifier_clean, terminal_pairing_code
+    FROM analytics.eda_item_observation_30d_hierarchy
+    WHERE is_training_eligible
+), overall AS (
+    SELECT COUNT(*)::numeric AS total_n,
+        COUNT(*) FILTER (WHERE target_failure_30d)::numeric AS total_positive
+    FROM eligible
+), grouped AS (
+    SELECT terminal_model_code, terminal_type,
+        COUNT(*)::numeric AS snapshot_count,
+        COUNT(DISTINCT item_identifier_clean)::numeric AS part_count,
+        COUNT(DISTINCT terminal_pairing_code)::numeric AS terminal_count,
+        COUNT(*) FILTER (WHERE target_failure_30d)::numeric AS positive_count
+    FROM eligible
+    WHERE terminal_model_code IS NOT NULL
+    GROUP BY terminal_model_code, terminal_type
+)
+SELECT g.terminal_model_code, g.terminal_type,
+    snapshot_count::bigint, part_count::bigint, terminal_count::bigint,
+    positive_count::bigint,
+    ROUND(100.0 * positive_count / NULLIF(snapshot_count, 0), 4)
+        AS positive_percentage,
+    ROUND((positive_count / NULLIF(snapshot_count, 0))
+        / NULLIF(o.total_positive / NULLIF(o.total_n, 0), 0), 4)
+        AS risk_ratio_to_overall,
+    terminal_count >= 20 AND positive_count >= 10 AS meets_minimum_support
+FROM grouped g CROSS JOIN overall o;
+
+CREATE VIEW analytics.eda_bivariate_association_summary AS
+WITH terminal_target AS (
+    SELECT terminal_type,
+        COUNT(*) FILTER (WHERE target_failure_30d)::numeric AS positive_count,
+        COUNT(*) FILTER (WHERE NOT target_failure_30d)::numeric AS negative_count
+    FROM analytics.eda_item_observation_30d_hierarchy
+    WHERE is_training_eligible AND is_parent_link_valid
+    GROUP BY terminal_type
+), target_total AS (
+    SELECT SUM(positive_count)::numeric AS positive_total,
+        SUM(negative_count)::numeric AS negative_total,
+        SUM(positive_count + negative_count)::numeric AS total_n
+    FROM terminal_target
+), target_chi AS (
+    SELECT SUM(
+        (positive_count - (positive_count + negative_count)
+            * positive_total / total_n)^2
+          / NULLIF((positive_count + negative_count)
+            * positive_total / total_n, 0)
+        +
+        (negative_count - (positive_count + negative_count)
+            * negative_total / total_n)^2
+          / NULLIF((positive_count + negative_count)
+            * negative_total / total_n, 0)
+    ) AS chi_square
+    FROM terminal_target CROSS JOIN target_total
+), part_terminal_cell AS (
+    SELECT part_model_code, terminal_type, COUNT(*)::numeric AS cell_count
+    FROM analytics.eda_part_terminal_cycle_link
+    WHERE is_parent_link_valid
+    GROUP BY part_model_code, terminal_type
+), part_total AS (
+    SELECT part_model_code, SUM(cell_count)::numeric AS row_count
+    FROM part_terminal_cell GROUP BY part_model_code
+), terminal_total AS (
+    SELECT terminal_type, SUM(cell_count)::numeric AS column_count
+    FROM part_terminal_cell GROUP BY terminal_type
+), hierarchy_total AS (
+    SELECT SUM(cell_count)::numeric AS total_n FROM part_terminal_cell
+), hierarchy_chi AS (
+    SELECT SUM((c.cell_count - p.row_count*t.column_count/h.total_n)^2
+        / NULLIF(p.row_count*t.column_count/h.total_n, 0)) AS chi_square
+    FROM part_terminal_cell c
+    JOIN part_total p USING (part_model_code)
+    JOIN terminal_total t USING (terminal_type)
+    CROSS JOIN hierarchy_total h
+)
+SELECT 'TERMINAL_TYPE_VS_TARGET'::text AS association,
+    tc.chi_square,
+    SQRT(tc.chi_square / tt.total_n) AS cramers_v,
+    tt.total_n::bigint AS observation_count,
+    'Effect size bivariat; target memiliki dua kelas'::text AS interpretation
+FROM target_chi tc CROSS JOIN target_total tt
+UNION ALL
+SELECT 'PART_MODEL_VS_TERMINAL_TYPE', hc.chi_square,
+    SQRT(hc.chi_square / (
+        ht.total_n * LEAST(
+            (SELECT COUNT(DISTINCT part_model_code) - 1 FROM part_terminal_cell),
+            (SELECT COUNT(DISTINCT terminal_type) - 1 FROM part_terminal_cell)
+        )
+    )), ht.total_n::bigint,
+    'Confounding struktur: nilai tinggi menuntut adjustment multivariat'
+FROM hierarchy_chi hc CROSS JOIN hierarchy_total ht;
+
+
+-- =========================================================
+-- G. REFRESH PROCEDURE
 -- =========================================================
 CREATE OR REPLACE PROCEDURE analytics.refresh_cached_views() LANGUAGE plpgsql AS $refresh$
 BEGIN
@@ -739,6 +1060,7 @@ BEGIN
     REFRESH MATERIALIZED VIEW analytics.failure_event_flow;
     REFRESH MATERIALIZED VIEW analytics.item_installation_cycle;
     REFRESH MATERIALIZED VIEW analytics.item_observation_30d;
+    REFRESH MATERIALIZED VIEW analytics.eda_part_terminal_cycle_link;
     REFRESH MATERIALIZED VIEW analytics.eda_snapshot_cadence_comparison;
     REFRESH MATERIALIZED VIEW analytics.eda_feature_stability_monthly;
 END; $refresh$;

@@ -39,7 +39,8 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `sql/10_operational_timeline.sql` | Memisahkan event operasional dari RECON administratif dan mengonfirmasi flow failure | `analytics.item_journey_semantic`, `analytics.item_journey_operational_timeline`, `analytics.failure_event_flow` |
 | `sql/11_item_installation_cycle.sql` | Membentuk siklus dari INSTALLED tepercaya sampai failure/reinstall/censoring serta mengaudit kepastian akhir siklus | `analytics.item_installation_cycle` |
 | `sql/12_item_observation_dataset.sql` | Membentuk snapshot 30-harian dan memisahkan fitur saat observasi, label masa depan, serta kolom audit | `analytics.item_observation_30d`, `item_observation_30d_features`, `item_observation_30d_labels`, dan `item_observation_30d_audit` |
-| `sql/13_eda_views.sql` | Menyatukan readiness, kualitas, distribusi, tren, lifecycle, target, stability, dan refresh dependency | Seluruh view pendukung EDA serta materialized summary cadence/drift |
+| `sql/13_eda_views.sql` | Menyatukan readiness, kualitas, distribusi, tren, lifecycle, target, hierarki PART-TERMINAL, analisis bivariat, stability, dan refresh dependency | Seluruh view pendukung EDA, mapping parent terminal per cycle, serta materialized summary cadence/drift |
+| `sql/14_feature_engineering.sql` | Membakukan keputusan keep/drop dan mentransformasi fitur point-in-time untuk modeling | Feature catalog, baseline feature cache, challenger features, label/split terpisah, audit, dan quality summary |
 | `queries/eda_manual_checks.sql` | Menyediakan query pemeriksaan manual tanpa tercampur dengan DDL pipeline | Preview dan drill-down audit yang aman dijalankan terpisah |
 | `notebooks/01_failure_eda.ipynb` | EDA interaktif tanpa memuat seluruh dataset detail ke memori | Tabel, grafik, pemeriksaan leakage, dan usulan time split |
 | `src/export_eda_report.py` | Menjalankan notebook, mengekspor HTML, dan membuat ringkasan eksekutif dari hasil database terkini | `reports/failure_eda.html` dan `reports/eda_executive_summary.md` |
@@ -108,7 +109,7 @@ digunakan lebih baru daripada backup ini.
 1. Hubungkan DBeaver ke database `OMEXP` yang sudah ada. Jangan membuat database
    baru.
 2. Buka SQL Editor pada koneksi tersebut.
-3. Jalankan 13 file di folder `sql` dari `01` sampai `13`, satu per satu.
+3. Jalankan 14 file di folder `sql` dari `01` sampai `14`, satu per satu.
 4. Aktifkan **Stop on error**. Jika satu file gagal, hentikan urutan dan periksa
    pesan nama tabel/kolom sebelum melanjutkan.
 5. Setelah file `02`, query `analytics.data_profile` untuk melihat profil data.
@@ -286,6 +287,44 @@ IV hanya screening univariat, sedangkan PSI hanya indikator drift; keduanya tida
 menggantikan validasi model secara temporal. Rekomendasi awal split adalah train
 sampai 2024, validation 2025, dan test 2026; keputusan final tetap mengikuti
 hasil EDA.
+
+Relasi PART ke perangkat induk ditentukan per installation cycle melalui
+`t_item_request_out`: serial PART dan work order installation menunjuk
+`parent_serial_code` TERMINAL. View `analytics.eda_part_terminal_cycle_link`
+mempertahankan status validasi master/inventory dan flag bila relasi historis
+dicatat setelah installation. EDA menampilkan positive rate, risk ratio, Wilson
+95%, minimum support, serta Cramer's V untuk tipe/model TERMINAL. Screening
+multivariat membandingkan Logistic Regression L2 PART-only, PART+TERMINAL, dan
+adjusted operational history pada split waktu. Relasi terminal yang backfilled
+tetap harus diuji melalui sensitivity analysis sebelum fitur dipakai produksi.
+
+## Feature engineering untuk modeling
+
+Keputusan fitur disimpan pada `analytics.failure_30d_feature_catalog` dengan
+status `KEEP_BASELINE`, `KEEP_CHALLENGER`, `AUDIT_ONLY`, atau kelompok `DROP_*`.
+Layer modeling dipisahkan agar target masa depan tidak ikut terbaca:
+
+```text
+analytics.failure_30d_baseline_features
+    Feature-only, cache berindeks, transformasi baseline yang parsimonious
+
+analytics.failure_30d_challenger_features
+    Baseline + lokasi + hierarchy terminal + interaksi terkontrol
+
+analytics.failure_30d_model_labels
+    Target, eligibility, dan temporal split; tidak berisi predictor
+
+analytics.failure_30d_model_audit
+    Gabungan untuk QA/penelusuran saja; dilarang sebagai input training langsung
+```
+
+Count dan duration yang skewed memakai `log1p`. Missing recency corrective
+bersifat struktural sehingga direpresentasikan sebagai nilai log nol bersama
+flag missing/`has_prior_corrective`. Bulan dibuat siklik menggunakan pasangan
+sin-cos. Quarter, weekend, timestamp absolut, identifier sebagai predictor,
+fitur lemah, fitur redundan, dan seluruh kolom future/observability tidak masuk
+baseline. Join feature-label wajib memakai `installation_cycle_id`,
+`item_identifier_clean`, dan `observation_on`.
 
 Runner hanya menerima `DB_NAME=OMEXP`. Runner juga menolak DDL database serta
 SQL yang berisi `UPDATE`, `DELETE`, `INSERT`, `TRUNCATE`,

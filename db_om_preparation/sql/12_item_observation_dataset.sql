@@ -1,4 +1,26 @@
 -- Dataset klasifikasi 30 hari; fitur hanya memakai event pada/before snapshot.
+-- Drop layer modeling tahap 14 terlebih dahulu agar pipeline dapat dijalankan
+-- ulang ketika view tersebut bergantung pada observation dataset.
+DROP VIEW IF EXISTS analytics.failure_30d_model_audit;
+DROP VIEW IF EXISTS analytics.failure_30d_feature_quality_summary;
+DROP VIEW IF EXISTS analytics.failure_30d_challenger_features;
+DROP VIEW IF EXISTS analytics.failure_30d_model_labels;
+DROP VIEW IF EXISTS analytics.failure_30d_feature_catalog;
+DO $drop_baseline_features$
+DECLARE object_kind "char";
+BEGIN
+    SELECT c.relkind INTO object_kind
+    FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'analytics'
+      AND c.relname = 'failure_30d_baseline_features';
+    IF object_kind = 'v' THEN
+        EXECUTE 'DROP VIEW analytics.failure_30d_baseline_features';
+    ELSIF object_kind = 'm' THEN
+        EXECUTE 'DROP MATERIALIZED VIEW analytics.failure_30d_baseline_features';
+    END IF;
+END $drop_baseline_features$;
+
 DROP MATERIALIZED VIEW IF EXISTS analytics.eda_feature_stability_monthly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.eda_snapshot_cadence_comparison;
 DROP VIEW IF EXISTS analytics.eda_target_class_distribution;
