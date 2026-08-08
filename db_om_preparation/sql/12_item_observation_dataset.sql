@@ -62,7 +62,18 @@ WITH snapshot AS (
             c.is_strict_negative_cycle_eligible
             AND gs.observation_on + INTERVAL '30 days'
                 <= LEAST(c.item_observation_end_on, c.dataset_max_event_on)
-        ) AS is_strict_target_observable
+        ) AS is_strict_target_observable,
+        -- Versi negatif tepercaya berbasis RECON (lihat file 11): tidak
+        -- mensyaratkan aktivitas baru-baru ini, hanya menolak negatif kalau
+        -- RECON terbukti muncul setelah item terakhir terlihat aktif.
+        (c.failure_onset_on IS NOT NULL
+          AND c.failure_onset_on > gs.observation_on
+          AND c.failure_onset_on <= gs.observation_on + INTERVAL '30 days')
+        OR (
+            c.is_recon_verified_negative_eligible
+            AND gs.observation_on + INTERVAL '30 days'
+                <= LEAST(c.cycle_end_on, c.dataset_max_event_on)
+        ) AS is_recon_verified_target_observable
     FROM analytics.item_installation_cycle c
     CROSS JOIN LATERAL generate_series(c.installed_on, c.cycle_end_on - INTERVAL '1 microsecond', INTERVAL '30 days') gs(observation_on)
     WHERE c.is_initial_model_cohort AND c.installed_on < c.cycle_end_on
@@ -176,10 +187,12 @@ SELECT installation_cycle_id, item_identifier_clean, observation_on,
     item_last_seen_on, item_observation_end_on,
     is_activity_coverage_confirmed, is_cycle_label_reliable,
     is_negative_cycle_eligible, is_strict_negative_cycle_eligible,
+    is_recon_verified_negative_eligible, has_recon_after_last_seen,
     is_legacy_target_observable, is_target_observable,
-    is_strict_target_observable,
+    is_strict_target_observable, is_recon_verified_target_observable,
     is_target_observable AS is_training_eligible,
     is_strict_target_observable AS is_strict_training_eligible,
+    is_recon_verified_target_observable AS is_recon_verified_training_eligible,
     CASE WHEN target_failure_30d THEN 'POSITIVE_FAILURE_WITHIN_30D'
          WHEN cycle_end_reason = 'REINSTALL_WITHOUT_RECORDED_FAILURE'
             THEN 'EXCLUDED_UNKNOWN_REINSTALL_WITHOUT_FAILURE'
@@ -212,11 +225,14 @@ FROM analytics.item_observation_30d;
 CREATE OR REPLACE VIEW analytics.item_observation_30d_labels AS
 SELECT installation_cycle_id, observation_on, target_failure_30d,
     is_training_eligible, is_strict_training_eligible,
+    is_recon_verified_training_eligible,
     is_legacy_target_observable, is_target_observable,
-    is_strict_target_observable, target_quality_status,
+    is_strict_target_observable, is_recon_verified_target_observable,
+    target_quality_status,
     cycle_end_reason, cycle_quality_status, observation_end_reason,
     is_activity_coverage_confirmed, is_cycle_label_reliable,
-    is_negative_cycle_eligible, is_strict_negative_cycle_eligible
+    is_negative_cycle_eligible, is_strict_negative_cycle_eligible,
+    is_recon_verified_negative_eligible, has_recon_after_last_seen
 FROM analytics.item_observation_30d;
 
 CREATE OR REPLACE VIEW analytics.item_observation_30d_audit AS

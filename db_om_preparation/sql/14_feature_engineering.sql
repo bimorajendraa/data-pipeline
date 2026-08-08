@@ -77,17 +77,17 @@ SELECT * FROM (VALUES
      'KEEP_CHALLENGER', 'ONE_HOT_RARE_GROUP', 'UNKNOWN_CATEGORY',
      'Coverage tinggi dan rate berbeda, tetapi perlu uji generalisasi tanpa lokasi'),
     ('terminal_type_category', 'terminal_type', 'HIERARCHY',
-     'KEEP_CHALLENGER', 'ONE_HOT', 'UNKNOWN_CATEGORY',
-     'M2 tidak memberi lift test yang stabil; tetap diuji sebagai konteks cycle'),
+     'KEEP_CHALLENGER', 'ONE_HOT_LOW_SUPPORT_GROUP', 'UNKNOWN_CATEGORY',
+     'Ablation study (2026-08) menemukan jenis TERMINAL baru dengan riwayat sedikit (contoh BALANCE READER, mulai dipasang 2023) mempunyai rate failure train vs validasi yang jauh berbeda dan menjatuhkan PR-AUC; dikelompokkan LOW_HISTORICAL_SUPPORT point-in-time (<300 observasi kumulatif) sebelum dipakai'),
     ('terminal_model_category', 'terminal_model_code', 'HIERARCHY',
-     'KEEP_CHALLENGER', 'ONE_HOT_RARE_GROUP', 'UNKNOWN_CATEGORY',
-     'Lebih detail daripada tipe terminal, tetapi rawan sparsity dan confounding'),
+     'KEEP_CHALLENGER', 'ONE_HOT_LOW_SUPPORT_GROUP', 'UNKNOWN_CATEGORY',
+     'Lebih detail daripada tipe terminal sehingga lebih rawan sparsity; memakai pengelompokan dukungan historis point-in-time yang sama seperti terminal_type_category'),
     ('last_status_category', 'last_status_clean', 'CATEGORICAL',
      'KEEP_CHALLENGER', 'ONE_HOT_RARE_GROUP', 'UNKNOWN_CATEGORY',
      'Point-in-time valid, tetapi perlu audit apakah hanya menangkap proses pencatatan'),
     ('part_terminal_type_interaction', 'part_model_code + terminal_type', 'INTERACTION',
-     'KEEP_CHALLENGER', 'CONCAT_RARE_GROUP', 'UNKNOWN_CATEGORY',
-     'Compatibility PART-terminal dapat non-linear; gunakan regularisasi/minimum support'),
+     'KEEP_CHALLENGER', 'CONCAT_LOW_SUPPORT_GROUP', 'UNKNOWN_CATEGORY',
+     'Compatibility PART-terminal dapat non-linear; memakai terminal_type yang sudah dikelompokkan dukungan historisnya, ditambah minimum support saat encoding'),
     ('part_location_interaction', 'part_model_code + last_place_clean', 'INTERACTION',
      'KEEP_CHALLENGER', 'CONCAT_RARE_GROUP', 'UNKNOWN_CATEGORY',
      'Menguji risiko kombinasi model-lokasi tanpa mengklaim kausalitas'),
@@ -180,6 +180,7 @@ SELECT installation_cycle_id, item_identifier_clean, observation_on,
     target_failure_30d,
     is_training_eligible,
     is_strict_training_eligible,
+    is_recon_verified_training_eligible,
     target_quality_status,
     CASE
         WHEN NOT is_training_eligible THEN 'EXCLUDED_LABEL_QUALITY'
@@ -245,16 +246,24 @@ CREATE VIEW analytics.failure_30d_challenger_features AS
 SELECT b.*,
     CASE WHEN h.is_location_feature_eligible
          THEN h.last_place_clean ELSE 'UNKNOWN' END AS location_category,
-    CASE WHEN h.is_parent_link_valid
-         THEN COALESCE(h.terminal_type, 'UNKNOWN') ELSE 'UNKNOWN' END
+    -- Jenis/model TERMINAL yang dukungan historisnya masih di bawah batas
+    -- aman (peralatan baru dengan sedikit riwayat) dikelompokkan tersendiri
+    -- alih-alih diberi kategori sendiri, supaya model tidak menghafal pola
+    -- dari sampel yang terlalu kecil (lihat catatan pada 12b, kasus
+    -- BALANCE READER yang baru mulai dipasang 2023).
+    CASE WHEN NOT h.is_parent_link_valid THEN 'UNKNOWN'
+         WHEN h.terminal_type_cumulative_support < 300 THEN 'LOW_HISTORICAL_SUPPORT'
+         ELSE COALESCE(h.terminal_type, 'UNKNOWN') END
         AS terminal_type_category,
-    CASE WHEN h.is_parent_link_valid
-         THEN COALESCE(h.terminal_model_code, 'UNKNOWN') ELSE 'UNKNOWN' END
+    CASE WHEN NOT h.is_parent_link_valid THEN 'UNKNOWN'
+         WHEN h.terminal_model_cumulative_support < 300 THEN 'LOW_HISTORICAL_SUPPORT'
+         ELSE COALESCE(h.terminal_model_code, 'UNKNOWN') END
         AS terminal_model_category,
     COALESCE(h.last_status_clean, 'UNKNOWN') AS last_status_category,
     b.part_model_category || '|' ||
-        CASE WHEN h.is_parent_link_valid
-             THEN COALESCE(h.terminal_type, 'UNKNOWN') ELSE 'UNKNOWN' END
+        CASE WHEN NOT h.is_parent_link_valid THEN 'UNKNOWN'
+             WHEN h.terminal_type_cumulative_support < 300 THEN 'LOW_HISTORICAL_SUPPORT'
+             ELSE COALESCE(h.terminal_type, 'UNKNOWN') END
         AS part_terminal_type_interaction,
     b.part_model_category || '|' ||
         CASE WHEN h.is_location_feature_eligible

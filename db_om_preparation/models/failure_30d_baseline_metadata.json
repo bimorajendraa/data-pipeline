@@ -1,0 +1,57 @@
+{
+  "trained_at_utc": "2026-08-08T12:19:51.393931+00:00",
+  "feature_columns": [
+    "part_model_category",
+    "client_category",
+    "installation_age_band",
+    "log_days_since_installation",
+    "log_total_prior_events",
+    "log_prior_failure_count",
+    "has_prior_failure",
+    "log_prior_corrective_count",
+    "has_prior_corrective",
+    "log_days_since_last_corrective",
+    "log_prior_distinct_places",
+    "log_prior_corrective_30d",
+    "log_prior_failure_365d",
+    "log_prior_events_180d",
+    "month_sin",
+    "month_cos"
+  ],
+  "categorical_features": [
+    "part_model_category",
+    "client_category",
+    "installation_age_band"
+  ],
+  "hyperparameters": {
+    "depth": 4,
+    "learning_rate": 0.03,
+    "l2_leaf_reg": 10
+  },
+  "eligibility_rule": "is_recon_verified_training_eligible",
+  "source_view": "analytics.failure_30d_baseline_features",
+  "best_iteration": 0,
+  "metrics": {
+    "train": {
+      "rows": 251568,
+      "positives": 3852,
+      "roc_auc": 0.7842178431873219,
+      "pr_auc": 0.04705164844733047
+    },
+    "validation": {
+      "rows": 49660,
+      "positives": 947,
+      "roc_auc": 0.7621213325615926,
+      "pr_auc": 0.05385079681151826
+    },
+    "test": {
+      "rows": 38451,
+      "positives": 902,
+      "roc_auc": 0.7606135521720945,
+      "pr_auc": 0.055323381018178984,
+      "brier_raw": 0.23541249701230496,
+      "brier_calibrated": 0.02233474439887297
+    }
+  },
+  "notes": "Baseline resmi (kelompok fitur C, 16 fitur). Fitur lokasi/TERMINAL belum dipakai karena belum terbukti cukup bernilai (lihat notebooks/03_ablation_study.ipynb). Selisih ROC-AUC validasi-test kecil (lihat notebooks/05_final_baseline_tuned.ipynb), tidak ada tanda overfitting."
+}

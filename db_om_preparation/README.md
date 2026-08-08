@@ -11,11 +11,13 @@ cache baru dibuat di schema `analytics`.
 
 ```text
 Data sumber -> profiling -> cleaning -> standardisasi -> transformasi
-            -> validasi master -> view live -> cache laporan -> EDA/Grafana
+            -> validasi master -> view live -> cache laporan -> EDA
+            -> baseline model -> Grafana
 ```
 
-Pipeline sudah menyiapkan fitur historis sederhana untuk EDA, tetapi belum
-melatih model. Tidak ada n8n, Airflow, Kafka, Spark, dbt, data warehouse, atau
+Pipeline sudah menyiapkan fitur historis untuk EDA dan sudah melatih baseline
+model (dummy, Logistic Regression, CatBoost) sebagai patokan awal - belum
+model produksi. Tidak ada n8n, Airflow, Kafka, Spark, dbt, data warehouse, atau
 perhitungan ulang MTBF di tahap ini.
 
 Sumber utama flow adalah `journal.t_item_journey`. Work order hanya menjadi
@@ -45,9 +47,15 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `queries/eda_manual_checks.sql` | Menyediakan query pemeriksaan manual tanpa tercampur dengan DDL pipeline | Preview dan drill-down audit yang aman dijalankan terpisah |
 | `notebooks/01a_business_eda.ipynb` | EDA operasional/bisnis: tren, reliability per model/lokasi/klien, efektivitas perbaikan, repeat failure, relokasi, dan kualitas pencatatan antar-era | Tabel, grafik, dan kesimpulan/rekomendasi untuk tim maintenance |
 | `notebooks/01b_feature_selection_eda.ipynb` | EDA kesiapan data dan pemilihan fitur: leakage check, imbalance, korelasi/IV, stability/PSI, dan keputusan fitur | Tabel, grafik, pemeriksaan leakage, dan usulan time split |
+| `notebooks/02_baseline_model.ipynb` | Melatih dan membandingkan dummy, Logistic Regression, dan CatBoost pada fitur baseline dengan split waktu train/validasi/test yang sudah tersedia | Tabel perbandingan PR-AUC/ROC-AUC/precision-recall@K, kurva kalibrasi, dan rekomendasi model |
+| `notebooks/03_ablation_study.ipynb` | Melatih CatBoost bertahap per kelompok fitur (model+umur -> +riwayat kerusakan -> +aktivitas/klien -> +lokasi -> +hierarki TERMINAL) untuk melihat fitur mana yang benar-benar menambah akurasi | Tabel kenaikan PR-AUC per kelompok, precision/recall@K, dan rekomendasi kombinasi fitur paling sederhana yang tetap kuat |
+| `notebooks/04_sensitivity_analysis.ipynb` | Membandingkan tiga aturan kelayakan label negatif (Normal, Strict berbasis jarak waktu, dan RECON-verified berbasis ada/tidaknya RECON belakangan) untuk menguji ketahanan model terhadap ketidakpastian label negatif | Tabel perbandingan jumlah data, ROC-AUC/PR-AUC, precision/recall@K, dan rekomendasi aturan kelayakan terbaik |
+| `notebooks/05_final_baseline_tuned.ipynb` | Model baseline resmi: fitur kelompok C + aturan RECON-verified, hyperparameter disetel terbatas, dicek konsistensi train/validasi/test (deteksi overfitting), dan probabilitas dikalibrasi | Tabel pencarian hyperparameter, tabel konsistensi ROC-AUC per split, kurva kalibrasi sebelum/sesudah, dan model baseline resmi |
 | `src/export_eda_report.py` | Menjalankan kedua notebook, mengekspor HTML, dan membuat ringkasan eksekutif dari hasil database terkini | `reports/business_eda.html`, `reports/feature_selection_eda.html`, dan `reports/eda_executive_summary.md` |
 | `src/run_pipeline.py` | Menjalankan semua SQL secara urut dan transactional per file | Seluruh view analytics tersedia |
 | `src/export_quality_report.py` | Mengekspor profiling dan quality summary | Dua CSV di folder `reports` |
+| `src/train_final_model.py` | Melatih model baseline resmi (fitur kelompok C, aturan RECON-verified, hyperparameter dari `05_final_baseline_tuned.ipynb`) dan menyimpan model + kalibrator | `models/failure_30d_baseline_catboost.cbm`, `models/failure_30d_baseline_calibrator.joblib`, `models/failure_30d_baseline_metadata.json` |
+| `src/score_current_risk.py` | Memberi skor risiko 30 hari untuk PART yang saat ini masih aktif, memakai model tersimpan | `reports/current_risk_ranking.csv` |
 
 Kesimpulan kesiapan, kejanggalan, risiko timeline, dan keputusan berikutnya
 dibuat otomatis di `reports/eda_executive_summary.md` ketika laporan diekspor.
@@ -143,6 +151,22 @@ python src\export_quality_report.py
 jupyter lab notebooks\01a_business_eda.ipynb
 jupyter lab notebooks\01b_feature_selection_eda.ipynb
 ```
+
+Setelah pipeline SQL berjalan, model baseline resmi dapat dilatih dan dipakai
+scoring dengan:
+
+```powershell
+python src\train_final_model.py
+python src\score_current_risk.py
+```
+
+`train_final_model.py` menyimpan model, kalibrator, dan metadata performa ke
+folder `models/`. `score_current_risk.py` memberi skor risiko 30 hari untuk
+seluruh PART yang saat ini masih aktif (belum rusak, belum dipasang ulang),
+memakai snapshot 30-harian terakhir yang tersedia untuk tiap PART - kolom
+`hari_sejak_snapshot` di hasilnya menunjukkan seberapa baru datanya. PART
+yang baru dipasang kurang dari 30 hari sebelum data terakhir belum akan
+muncul karena belum sempat mendapat snapshot pertama.
 
 Untuk mengeksekusi notebook secara otomatis dan membuat HTML:
 

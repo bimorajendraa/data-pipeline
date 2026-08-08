@@ -28,6 +28,21 @@ WITH dataset_boundary AS (
     FROM analytics.item_journey_operational_timeline
     WHERE item_identifier_clean IS NOT NULL
     GROUP BY item_identifier_clean
+), item_recon_after_boundary AS (
+    -- RECON yang muncul setelah waktu terakhir item terlihat aktif menandakan
+    -- ada sesuatu yang perlu direkonsiliasi pada item tersebut - sinyal bahwa
+    -- masa diam sebelumnya belum tentu benar-benar aman, terlepas seberapa
+    -- baru aktivitas terakhirnya. Dipakai sebagai dasar
+    -- is_recon_verified_negative_eligible di bawah (temuan sensitivity
+    -- analysis 2026-08: aturan berbasis RECON lebih tepat sasaran daripada
+    -- aturan berbasis jarak waktu semata).
+    SELECT b.item_identifier_clean,
+        BOOL_OR(s.created_on > b.item_last_seen_on) AS has_recon_after_last_seen
+    FROM item_activity_boundary b
+    JOIN analytics.item_journey_semantic s
+      ON s.item_identifier_clean = b.item_identifier_clean
+     AND s.is_admin_recon_context
+    GROUP BY b.item_identifier_clean
 ), installed_events AS (
     SELECT o.*,
         ROW_NUMBER() OVER (PARTITION BY o.item_identifier_clean ORDER BY o.created_on, o.journey_id) AS installation_sequence,
@@ -44,11 +59,15 @@ WITH dataset_boundary AS (
         f.failure_place_clean, f.is_location_feature_eligible AS is_failure_location_valid,
         f.model_cohort_status AS failure_model_cohort_status,
         b.dataset_max_event_on, item_end.item_last_seen_on,
-        item_end.item_last_status_clean
+        item_end.item_last_status_clean,
+        COALESCE(recon_after.has_recon_after_last_seen, FALSE)
+            AS has_recon_after_last_seen
     FROM installed_events i
     CROSS JOIN dataset_boundary b
     JOIN item_activity_boundary item_end
       ON item_end.item_identifier_clean = i.item_identifier_clean
+    LEFT JOIN item_recon_after_boundary recon_after
+      ON recon_after.item_identifier_clean = i.item_identifier_clean
     LEFT JOIN LATERAL (
         SELECT f.journey_id, f.failure_onset_on, f.failure_confirmed_on,
             f.failure_confirmation_status, f.event_label_basis,
@@ -125,6 +144,18 @@ SELECT item_identifier_clean || ':' || installation_sequence::text AS installati
           next_installed_on IS NULL
           AND dataset_max_event_on - item_last_seen_on <= INTERVAL '30 days'
       ) AS is_strict_negative_cycle_eligible,
+    has_recon_after_last_seen,
+    -- Alternatif yang lebih tepat sasaran dibanding is_strict_negative_cycle_eligible:
+    -- tidak mensyaratkan aktivitas baru-baru ini, tetapi menolak negatif kalau
+    -- RECON terbukti muncul belakangan untuk item tersebut. Sensitivity
+    -- analysis (2026-08) menemukan is_strict_negative_cycle_eligible melewatkan
+    -- kasus yang baru aktif tetapi tetap kena RECON, dan sebaliknya membuang
+    -- kasus lama-diam yang sebenarnya tidak pernah direkonsiliasi sama sekali.
+    failure_onset_on IS NOT NULL
+      OR (
+          next_installed_on IS NULL
+          AND NOT COALESCE(has_recon_after_last_seen, FALSE)
+      ) AS is_recon_verified_negative_eligible,
     CASE
         WHEN failure_onset_on IS NOT NULL THEN 'RELIABLE_OBSERVED_FAILURE'
         WHEN next_installed_on IS NOT NULL

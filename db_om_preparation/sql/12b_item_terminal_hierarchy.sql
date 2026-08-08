@@ -108,6 +108,13 @@ CREATE INDEX eda_part_terminal_cycle_link_part_idx
         item_identifier_clean, installed_on
     );
 
+-- Dukungan historis kumulatif (point-in-time) per jenis/model TERMINAL.
+-- Dipakai file 14 untuk mengelompokkan jenis/model TERMINAL yang riwayatnya
+-- masih sangat sedikit pada tanggal observasi (misalnya peralatan baru yang
+-- baru mulai dipasang) menjadi kategori "dukungan historis rendah", supaya
+-- model tidak menghafal pola dari sampel yang terlalu kecil. Dihitung hanya
+-- dari event pada atau sebelum observation_on masing-masing baris (via ORDER
+-- BY di window function) sehingga tidak memakai informasi masa depan.
 CREATE VIEW analytics.eda_item_observation_30d_hierarchy AS
 SELECT o.*,
     p.terminal_serial_version,
@@ -120,7 +127,17 @@ SELECT o.*,
     p.is_parent_link_valid,
     p.is_parent_link_recorded_after_installation,
     p.parent_link_recording_delay_days,
-    p.parent_link_quality_status
+    p.parent_link_quality_status,
+    COUNT(*) OVER (
+        PARTITION BY (CASE WHEN p.is_parent_link_valid THEN p.terminal_type END)
+        ORDER BY o.observation_on
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS terminal_type_cumulative_support,
+    COUNT(*) OVER (
+        PARTITION BY (CASE WHEN p.is_parent_link_valid THEN p.terminal_model_code END)
+        ORDER BY o.observation_on
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS terminal_model_cumulative_support
 FROM analytics.item_observation_30d o
 LEFT JOIN analytics.eda_part_terminal_cycle_link p
   USING (installation_cycle_id);

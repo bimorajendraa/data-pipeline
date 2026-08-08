@@ -3,4 +3,5 @@ __pycache__/
 *.py[cod]
 reports/*.csv
 logs/*.log
+catboost_info/
 
