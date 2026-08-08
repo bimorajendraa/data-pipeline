@@ -81,6 +81,8 @@ baseline model.
 ## Status
 
 Feature engineering baseline selesai dan data siap dilanjutkan ke **baseline
-modeling**, tetapi belum dinyatakan siap produksi. Detail tabel, grafik, IV,
-korelasi, lifecycle, PSI, dan keputusan fitur tersedia di
-`reports/failure_eda.html`.
+modeling**, tetapi belum dinyatakan siap produksi. Insight operasional (tren,
+risiko per model/lokasi/klien, efektivitas perbaikan, repeat failure, relokasi)
+tersedia di `reports/business_eda.html`. Detail teknis kesiapan data, IV,
+korelasi, PSI, dan keputusan fitur tersedia di
+`reports/feature_selection_eda.html`.

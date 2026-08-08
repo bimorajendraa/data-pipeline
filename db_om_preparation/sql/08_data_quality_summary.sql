@@ -162,7 +162,7 @@ checks(table_name, quality_check, total_rows, failed_rows, severity, description
         ('location not found', item.total_rows, item.location_not_found, 'WARNING', 'Location code tidak ditemukan pada master lokasi'),
         ('status not found', item.total_rows, item.status_not_found, 'INFO', 'Status tidak ditemukan pada master status'),
         ('invalid date', item.total_rows, item.invalid_date, 'WARNING', 'Received date kosong, terlalu lama, atau urutan tanggal salah'),
-        ('future date', item.total_rows, item.future_date, 'INFO', 'Salah satu tanggal berada di masa depan')
+        ('future date', item.total_rows, item.future_date, 'WARNING', 'Salah satu tanggal berada di masa depan')
     ) v(quality_check, total_rows, failed_rows, severity, description)
     UNION ALL
     SELECT 'journal.t_work_order', v.* FROM wo CROSS JOIN LATERAL (VALUES
@@ -171,7 +171,7 @@ checks(table_name, quality_check, total_rows, failed_rows, severity, description
         ('current status inconsistent', wo.total_rows, wo.inconsistent_status, 'WARNING', 'Current status berbeda dengan status history terakhir'),
         ('invalid due date', wo.total_rows, wo.invalid_due_date, 'WARNING', 'Start date/due date kosong atau start date melewati due date'),
         ('invalid date', wo.total_rows, wo.invalid_date, 'WARNING', 'Tanggal kosong, terlalu lama, atau urutannya salah'),
-        ('future date', wo.total_rows, wo.future_date, 'INFO', 'Salah satu tanggal berada di masa depan'),
+        ('future date', wo.total_rows, wo.future_date, 'WARNING', 'Salah satu tanggal berada di masa depan'),
         ('status not found', wo.total_rows, wo.status_not_found, 'INFO', 'Current status tidak ditemukan pada master status'),
         ('latest status not found', wo.total_rows, wo.latest_status_not_found, 'INFO', 'Status history terakhir tidak ditemukan pada master status WORK'),
         ('work type not found', wo.total_rows, wo.work_type_not_found, 'INFO', 'Work type tidak ditemukan pada master work type'),

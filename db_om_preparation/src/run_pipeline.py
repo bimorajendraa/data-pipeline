@@ -22,6 +22,7 @@ SQL_FILES = [
     "10_operational_timeline.sql",
     "11_item_installation_cycle.sql",
     "12_item_observation_dataset.sql",
+    "12b_item_terminal_hierarchy.sql",
     "13_eda_views.sql",
     "14_feature_engineering.sql",
 ]
@@ -69,7 +70,9 @@ def main() -> int:
 
             print(
                 "\nPipeline selesai. Clean view, cache analytics, dan dataset EDA "
-                "sudah siap. Buka notebooks/01_failure_eda.ipynb untuk EDA."
+                "sudah siap. Buka notebooks/01a_business_eda.ipynb (insight "
+                "operasional) atau notebooks/01b_feature_selection_eda.ipynb "
+                "(kesiapan data dan fitur) untuk EDA."
             )
         return 0
     except Exception as exc:

@@ -116,7 +116,13 @@ WITH snapshot AS (
             (ARRAY_AGG(o.status_clean ORDER BY o.created_on DESC, o.journey_id DESC))[1] AS last_status_clean,
             (ARRAY_AGG(o.place_canonical_clean
                 ORDER BY o.created_on DESC, o.journey_id DESC))[1]
-                AS last_place_clean
+                AS last_place_clean,
+            -- Samakan aturan lokasi meragukan dengan is_installed_location_valid
+            -- pada item_installation_cycle (file 11), supaya fitur lokasi terakhir
+            -- tidak menganggap lokasi yang mapping-nya ambigu sebagai layak pakai.
+            (ARRAY_AGG(o.is_place_mapping_ambiguous
+                ORDER BY o.created_on DESC, o.journey_id DESC))[1]
+                AS last_place_mapping_ambiguous
         FROM analytics.item_journey_operational_timeline o
         WHERE o.item_identifier_clean = s.item_identifier_clean AND o.created_on <= s.observation_on
     ) h ON TRUE
@@ -131,7 +137,9 @@ SELECT installation_cycle_id, item_identifier_clean, observation_on,
     item_model_code_clean, item_type_clean,
     installed_client_clean, installed_place_source_clean, installed_place_clean,
     is_installed_location_valid, last_place_clean,
-    last_place_clean IS NOT NULL AS is_location_feature_eligible,
+    last_place_clean IS NOT NULL
+        AND NOT COALESCE(last_place_mapping_ambiguous, FALSE)
+        AS is_location_feature_eligible,
     installed_on,
     EXTRACT(EPOCH FROM (observation_on - installed_on)) / 86400.0 AS days_since_installation,
     COALESCE(total_prior_events, 0) AS total_prior_events,

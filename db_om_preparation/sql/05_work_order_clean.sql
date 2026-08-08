@@ -1,27 +1,5 @@
 CREATE OR REPLACE VIEW analytics.work_order_clean AS
-WITH master_work_status AS (
-    -- Work order menyimpan status code (contoh 202), sedangkan history dapat
-    -- menyimpan status name (contoh CLOSED). Keduanya dipetakan ke code master.
-    SELECT
-        status_value_clean,
-        MIN(status_code_clean) AS status_code_clean
-    FROM (
-        SELECT
-            analytics.clean_code(s.status_code) AS status_code_clean,
-            analytics.clean_code(s.status_code) AS status_value_clean
-        FROM master.t_mtr_status s
-        WHERE analytics.clean_code(s.status_type) = 'WORK'
-        UNION ALL
-        SELECT
-            analytics.clean_code(s.status_code),
-            analytics.clean_code(s.status_name)
-        FROM master.t_mtr_status s
-        WHERE analytics.clean_code(s.status_type) = 'WORK'
-    ) status_map
-    WHERE status_value_clean IS NOT NULL
-    GROUP BY status_value_clean
-),
-latest_history_raw AS (
+WITH latest_history_raw AS (
     SELECT DISTINCT ON (analytics.clean_code(h.wo_code))
         analytics.clean_code(h.wo_code) AS wo_code_clean,
         analytics.clean_code(h.status) AS latest_status_clean,
@@ -38,7 +16,7 @@ latest_history AS (
         h.*,
         s.status_code_clean AS latest_status_code_clean
     FROM latest_history_raw h
-    LEFT JOIN master_work_status s
+    LEFT JOIN analytics.master_work_status_lookup s
         ON s.status_value_clean = h.latest_status_clean
 ),
 master_work_type AS (
@@ -49,15 +27,6 @@ master_work_type AS (
         (analytics.clean_code(w.work_type))
     ) value(work_type_value_clean)
     WHERE work_type_value_clean IS NOT NULL
-),
-master_location AS (
-    SELECT DISTINCT location_value_clean
-    FROM master.t_mtr_location l
-    CROSS JOIN LATERAL (VALUES
-        (analytics.clean_code(l.location_code)),
-        (analytics.clean_code(l.location_name))
-    ) value(location_value_clean)
-    WHERE location_value_clean IS NOT NULL
 )
 SELECT
     wo.wo_id,
@@ -131,9 +100,9 @@ SELECT
 FROM journal.t_work_order wo
 LEFT JOIN latest_history lh
     ON lh.wo_code_clean = analytics.clean_code(wo.wo_code)
-LEFT JOIN master_work_status current_status_master
+LEFT JOIN analytics.master_work_status_lookup current_status_master
     ON current_status_master.status_value_clean = analytics.clean_code(wo.current_status)
 LEFT JOIN master_work_type mwt
     ON mwt.work_type_value_clean = analytics.clean_code(wo.work_type_code)
-LEFT JOIN master_location ml
+LEFT JOIN analytics.master_location_lookup ml
     ON ml.location_value_clean = analytics.clean_code(wo.location);

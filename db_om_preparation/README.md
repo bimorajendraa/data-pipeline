@@ -39,11 +39,13 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `sql/10_operational_timeline.sql` | Memisahkan event operasional dari RECON administratif dan mengonfirmasi flow failure | `analytics.item_journey_semantic`, `analytics.item_journey_operational_timeline`, `analytics.failure_event_flow` |
 | `sql/11_item_installation_cycle.sql` | Membentuk siklus dari INSTALLED tepercaya sampai failure/reinstall/censoring serta mengaudit kepastian akhir siklus | `analytics.item_installation_cycle` |
 | `sql/12_item_observation_dataset.sql` | Membentuk snapshot 30-harian dan memisahkan fitur saat observasi, label masa depan, serta kolom audit | `analytics.item_observation_30d`, `item_observation_30d_features`, `item_observation_30d_labels`, dan `item_observation_30d_audit` |
-| `sql/13_eda_views.sql` | Menyatukan readiness, kualitas, distribusi, tren, lifecycle, target, hierarki PART-TERMINAL, analisis bivariat, stability, dan refresh dependency | Seluruh view pendukung EDA, mapping parent terminal per cycle, serta materialized summary cadence/drift |
+| `sql/12b_item_terminal_hierarchy.sql` | Menghubungkan setiap installation cycle PART ke perangkat induk (TERMINAL) dan memperkaya observation dataset dengan relasi tersebut | `analytics.eda_part_terminal_cycle_link`, `analytics.eda_item_observation_30d_hierarchy` |
+| `sql/13_eda_views.sql` | Menyatukan readiness, kualitas, distribusi, tren, lifecycle, target, ringkasan struktur dan analisis bivariat PART-TERMINAL, stability, dan refresh dependency | Seluruh view pendukung EDA serta materialized summary cadence/drift |
 | `sql/14_feature_engineering.sql` | Membakukan keputusan keep/drop dan mentransformasi fitur point-in-time untuk modeling | Feature catalog, baseline feature cache, challenger features, label/split terpisah, audit, dan quality summary |
 | `queries/eda_manual_checks.sql` | Menyediakan query pemeriksaan manual tanpa tercampur dengan DDL pipeline | Preview dan drill-down audit yang aman dijalankan terpisah |
-| `notebooks/01_failure_eda.ipynb` | EDA interaktif tanpa memuat seluruh dataset detail ke memori | Tabel, grafik, pemeriksaan leakage, dan usulan time split |
-| `src/export_eda_report.py` | Menjalankan notebook, mengekspor HTML, dan membuat ringkasan eksekutif dari hasil database terkini | `reports/failure_eda.html` dan `reports/eda_executive_summary.md` |
+| `notebooks/01a_business_eda.ipynb` | EDA operasional/bisnis: tren, reliability per model/lokasi/klien, efektivitas perbaikan, repeat failure, relokasi, dan kualitas pencatatan antar-era | Tabel, grafik, dan kesimpulan/rekomendasi untuk tim maintenance |
+| `notebooks/01b_feature_selection_eda.ipynb` | EDA kesiapan data dan pemilihan fitur: leakage check, imbalance, korelasi/IV, stability/PSI, dan keputusan fitur | Tabel, grafik, pemeriksaan leakage, dan usulan time split |
+| `src/export_eda_report.py` | Menjalankan kedua notebook, mengekspor HTML, dan membuat ringkasan eksekutif dari hasil database terkini | `reports/business_eda.html`, `reports/feature_selection_eda.html`, dan `reports/eda_executive_summary.md` |
 | `src/run_pipeline.py` | Menjalankan semua SQL secara urut dan transactional per file | Seluruh view analytics tersedia |
 | `src/export_quality_report.py` | Mengekspor profiling dan quality summary | Dua CSV di folder `reports` |
 
@@ -109,7 +111,8 @@ digunakan lebih baru daripada backup ini.
 1. Hubungkan DBeaver ke database `OMEXP` yang sudah ada. Jangan membuat database
    baru.
 2. Buka SQL Editor pada koneksi tersebut.
-3. Jalankan 14 file di folder `sql` dari `01` sampai `14`, satu per satu.
+3. Jalankan 15 file di folder `sql` sesuai urutan nama file: `01` sampai `12`,
+   lalu `12b`, lalu `13` dan `14`.
 4. Aktifkan **Stop on error**. Jika satu file gagal, hentikan urutan dan periksa
    pesan nama tabel/kolom sebelum melanjutkan.
 5. Setelah file `02`, query `analytics.data_profile` untuk melihat profil data.
@@ -137,7 +140,8 @@ Isi `.env` dengan kredensial database `OMEXP` yang sudah ada, lalu jalankan:
 ```powershell
 python src\run_pipeline.py
 python src\export_quality_report.py
-jupyter lab notebooks\01_failure_eda.ipynb
+jupyter lab notebooks\01a_business_eda.ipynb
+jupyter lab notebooks\01b_feature_selection_eda.ipynb
 ```
 
 Untuk mengeksekusi notebook secara otomatis dan membuat HTML:
@@ -277,9 +281,15 @@ Fitur lokasi menggunakan nama canonical dari `master.t_mtr_location`. Nilai
 lokasi yang tidak cocok atau ambigu tetap dipertahankan untuk audit, tetapi
 `is_location_feature_eligible = FALSE` dan tidak dipakai pada grafik lokasi.
 
-Notebook membandingkan era lama dan era detail repair, target imbalance,
-missingness beserta strategi penanganan, umur sampai failure, model dengan
-dukungan sampel minimum, fitur failure/nonfailure, serta split waktu. EDA juga
+EDA dipecah menjadi dua notebook agar tujuannya tidak tercampur. Notebook
+`01a_business_eda.ipynb` menjawab pertanyaan operasional: sebaran item/model/
+lokasi, tren kerusakan, reliability per model/lokasi/klien, efektivitas
+perbaikan (rusak sampai kembali dipasang), repeat failure, kaitan relokasi
+dengan kerusakan, dan kualitas pencatatan antar-era dalam bahasa yang mudah
+dibaca tim operasional. Notebook `01b_feature_selection_eda.ipynb`
+membandingkan era lama dan era detail repair, target imbalance, missingness
+beserta strategi penanganan, umur sampai failure, model dengan dukungan sampel
+minimum, fitur failure/nonfailure, serta split waktu. Notebook ini juga
 menampilkan matriks Pearson dan Spearman, pasangan fitur redundan, screening
 Information Value (IV), cakupan master lokasi/client pada level snapshot, tren
 fitur bulanan, dan Population Stability Index (PSI) terhadap referensi 2024.
@@ -335,7 +345,8 @@ Hasil ekspor:
 
 - `reports/data_profile.csv`
 - `reports/data_quality_summary.csv`
-- `reports/failure_eda.html`
+- `reports/business_eda.html`
+- `reports/feature_selection_eda.html`
 - `reports/eda_executive_summary.md`
 
 ## Pemeriksaan hasil

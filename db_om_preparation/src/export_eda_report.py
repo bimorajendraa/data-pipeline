@@ -170,30 +170,39 @@ baseline model.
 ## Status
 
 Feature engineering baseline selesai dan data siap dilanjutkan ke **baseline
-modeling**, tetapi belum dinyatakan siap produksi. Detail tabel, grafik, IV,
-korelasi, lifecycle, PSI, dan keputusan fitur tersedia di
-`reports/failure_eda.html`.
+modeling**, tetapi belum dinyatakan siap produksi. Insight operasional (tren,
+risiko per model/lokasi/klien, efektivitas perbaikan, repeat failure, relokasi)
+tersedia di `reports/business_eda.html`. Detail teknis kesiapan data, IV,
+korelasi, PSI, dan keputusan fitur tersedia di
+`reports/feature_selection_eda.html`.
 """
     output_path.write_text(content, encoding="utf-8")
 
 
+NOTEBOOKS = [
+    ("01a_business_eda.ipynb", "business_eda.html"),
+    ("01b_feature_selection_eda.ipynb", "feature_selection_eda.html"),
+]
+
+
 def main() -> int:
-    notebook = PROJECT_DIR / "notebooks" / "01_failure_eda.ipynb"
     output_dir = PROJECT_DIR / "reports"
     output_dir.mkdir(exist_ok=True)
-    command = [
-        sys.executable, "-m", "jupyter", "nbconvert", "--to", "html",
-        "--execute", str(notebook), "--output", "failure_eda.html",
-        "--output-dir", str(output_dir),
-        "--ExecutePreprocessor.timeout=600",
-    ]
-    result = subprocess.run(command, cwd=PROJECT_DIR, check=False)
-    if result.returncode:
-        print("[ERROR] Notebook EDA gagal dieksekusi.", file=sys.stderr)
-        return result.returncode
+    for notebook_name, html_name in NOTEBOOKS:
+        notebook = PROJECT_DIR / "notebooks" / notebook_name
+        command = [
+            sys.executable, "-m", "jupyter", "nbconvert", "--to", "html",
+            "--execute", str(notebook), "--output", html_name,
+            "--output-dir", str(output_dir),
+            "--ExecutePreprocessor.timeout=600",
+        ]
+        result = subprocess.run(command, cwd=PROJECT_DIR, check=False)
+        if result.returncode:
+            print(f"[ERROR] Notebook {notebook_name} gagal dieksekusi.", file=sys.stderr)
+            return result.returncode
+        print(f"[OK] Laporan EDA: {output_dir / html_name}")
     summary_path = output_dir / "eda_executive_summary.md"
     export_executive_summary(summary_path)
-    print(f"[OK] Laporan EDA: {output_dir / 'failure_eda.html'}")
     print(f"[OK] Ringkasan EDA: {summary_path}")
     return 0
 

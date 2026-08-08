@@ -13,35 +13,6 @@ WITH source AS (
 work_orders AS (
     SELECT DISTINCT analytics.clean_code(wo_code) AS wo_code_clean
     FROM journal.t_work_order
-),
-master_status AS (
-    SELECT
-        status_value_clean,
-        MIN(status_code_clean) AS status_code_clean
-    FROM (
-        SELECT
-            analytics.clean_code(status_code) AS status_code_clean,
-            analytics.clean_code(status_code) AS status_value_clean
-        FROM master.t_mtr_status
-        WHERE analytics.clean_code(status_type) = 'WORK'
-        UNION ALL
-        SELECT
-            analytics.clean_code(status_code),
-            analytics.clean_code(status_name)
-        FROM master.t_mtr_status
-        WHERE analytics.clean_code(status_type) = 'WORK'
-    ) status_map
-    WHERE status_value_clean IS NOT NULL
-    GROUP BY status_value_clean
-),
-master_location AS (
-    SELECT DISTINCT location_value_clean
-    FROM master.t_mtr_location l
-    CROSS JOIN LATERAL (VALUES
-        (analytics.clean_code(l.location_code)),
-        (analytics.clean_code(l.location_name))
-    ) value(location_value_clean)
-    WHERE location_value_clean IS NOT NULL
 )
 SELECT
     h.wo_history_id,
@@ -86,6 +57,6 @@ SELECT
         OR ml.location_value_clean IS NOT NULL AS is_place_found
 FROM source h
 LEFT JOIN work_orders wo ON wo.wo_code_clean = h.wo_code_clean
-LEFT JOIN master_status ms ON ms.status_value_clean = h.status_clean
-LEFT JOIN master_location ml
+LEFT JOIN analytics.master_work_status_lookup ms ON ms.status_value_clean = h.status_clean
+LEFT JOIN analytics.master_location_lookup ml
     ON ml.location_value_clean = analytics.clean_code(h.place);

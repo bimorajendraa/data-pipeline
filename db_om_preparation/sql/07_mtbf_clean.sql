@@ -25,15 +25,6 @@ WITH master_item AS (
     ) item_value
     GROUP BY item_model_value_clean
 ),
-master_location AS (
-    SELECT DISTINCT location_value_clean
-    FROM master.t_mtr_location l
-    CROSS JOIN LATERAL (VALUES
-        (analytics.clean_code(l.location_code)),
-        (analytics.clean_code(l.location_name))
-    ) value(location_value_clean)
-    WHERE location_value_clean IS NOT NULL
-),
 master_client AS (
     SELECT
         client_value_clean,
@@ -116,5 +107,5 @@ LEFT JOIN master_item mi
     ON mi.item_model_value_clean = analytics.clean_code(m.item_model)
 LEFT JOIN master_client mc
     ON mc.client_value_clean = analytics.clean_name(m.client_code)
-LEFT JOIN master_location ml
+LEFT JOIN analytics.master_location_lookup ml
     ON ml.location_value_clean = analytics.clean_code(m.location_code);

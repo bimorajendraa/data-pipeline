@@ -175,3 +175,35 @@ RETURN ROUND(
         ), 0),
     4
 );
+
+-- Lookup master bersama untuk status kerja (WORK) dan lokasi. Sebelumnya CTE
+-- yang sama persis ditulis ulang di 05, 06, dan 07; disatukan di sini agar
+-- perubahan definisi master cukup dilakukan satu tempat.
+CREATE OR REPLACE VIEW analytics.master_work_status_lookup AS
+SELECT
+    status_value_clean,
+    MIN(status_code_clean) AS status_code_clean
+FROM (
+    SELECT
+        analytics.clean_code(s.status_code) AS status_code_clean,
+        analytics.clean_code(s.status_code) AS status_value_clean
+    FROM master.t_mtr_status s
+    WHERE analytics.clean_code(s.status_type) = 'WORK'
+    UNION ALL
+    SELECT
+        analytics.clean_code(s.status_code),
+        analytics.clean_code(s.status_name)
+    FROM master.t_mtr_status s
+    WHERE analytics.clean_code(s.status_type) = 'WORK'
+) status_map
+WHERE status_value_clean IS NOT NULL
+GROUP BY status_value_clean;
+
+CREATE OR REPLACE VIEW analytics.master_location_lookup AS
+SELECT DISTINCT location_value_clean
+FROM master.t_mtr_location l
+CROSS JOIN LATERAL (VALUES
+    (analytics.clean_code(l.location_code)),
+    (analytics.clean_code(l.location_name))
+) value(location_value_clean)
+WHERE location_value_clean IS NOT NULL;
