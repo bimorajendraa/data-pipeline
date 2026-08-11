@@ -44,6 +44,7 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `sql/12b_item_terminal_hierarchy.sql` | Menghubungkan setiap installation cycle PART ke perangkat induk (TERMINAL) dan memperkaya observation dataset dengan relasi tersebut | `analytics.eda_part_terminal_cycle_link`, `analytics.eda_item_observation_30d_hierarchy` |
 | `sql/13_eda_views.sql` | Menyatukan readiness, kualitas, distribusi, tren, lifecycle, target, ringkasan struktur dan analisis bivariat PART-TERMINAL, stability, dan refresh dependency | Seluruh view pendukung EDA serta materialized summary cadence/drift |
 | `sql/14_feature_engineering.sql` | Membakukan keputusan keep/drop dan mentransformasi fitur point-in-time untuk modeling | Feature catalog, baseline feature cache, challenger features, label/split terpisah, audit, dan quality summary |
+| `sql/15_current_risk_snapshot.sql` | Menghitung ulang fitur yang sama seperti baseline, tapi khusus untuk PART aktif pada observation_on = kejadian terbaru di database (bukan grid 30-harian) supaya skor operasional tidak basi | `analytics.item_current_snapshot_features`, dipakai `score_current_risk.py` |
 | `queries/eda_manual_checks.sql` | Menyediakan query pemeriksaan manual tanpa tercampur dengan DDL pipeline | Preview dan drill-down audit yang aman dijalankan terpisah |
 | `notebooks/01a_business_eda.ipynb` | EDA operasional/bisnis: tren, reliability per model/lokasi/klien, efektivitas perbaikan, repeat failure, relokasi, dan kualitas pencatatan antar-era | Tabel, grafik, dan kesimpulan/rekomendasi untuk tim maintenance |
 | `notebooks/01b_feature_selection_eda.ipynb` | EDA kesiapan data dan pemilihan fitur: leakage check, imbalance, korelasi/IV, stability/PSI, dan keputusan fitur | Tabel, grafik, pemeriksaan leakage, dan usulan time split |
@@ -120,8 +121,8 @@ digunakan lebih baru daripada backup ini.
 1. Hubungkan DBeaver ke database `OMEXP` yang sudah ada. Jangan membuat database
    baru.
 2. Buka SQL Editor pada koneksi tersebut.
-3. Jalankan 15 file di folder `sql` sesuai urutan nama file: `01` sampai `12`,
-   lalu `12b`, lalu `13` dan `14`.
+3. Jalankan 16 file di folder `sql` sesuai urutan nama file: `01` sampai `12`,
+   lalu `12b`, lalu `13`, `14`, dan `15`.
 4. Aktifkan **Stop on error**. Jika satu file gagal, hentikan urutan dan periksa
    pesan nama tabel/kolom sebelum melanjutkan.
 5. Setelah file `02`, query `analytics.data_profile` untuk melihat profil data.
@@ -164,10 +165,13 @@ python src\score_current_risk.py
 `train_final_model.py` menyimpan model, kalibrator, dan metadata performa ke
 folder `models/`. `score_current_risk.py` memberi skor risiko 30 hari untuk
 seluruh PART yang saat ini masih aktif (belum rusak, belum dipasang ulang),
-memakai snapshot 30-harian terakhir yang tersedia untuk tiap PART - kolom
-`hari_sejak_snapshot` di hasilnya menunjukkan seberapa baru datanya. PART
-yang baru dipasang kurang dari 30 hari sebelum data terakhir belum akan
-muncul karena belum sempat mendapat snapshot pertama.
+memakai `analytics.item_current_snapshot_features` (`sql/15`) yang menghitung
+ulang fitur historis pada observation_on = kejadian terbaru yang tercatat di
+database - bukan snapshot grid 30-harian dari dataset training, yang bisa
+tertinggal sampai ~29 hari. Kolom `hari_sejak_data_terakhir` di hasilnya
+menunjukkan seberapa baru database itu sendiri (bukan lagi soal snapshot
+yang basi). PART langsung mendapat skor sejak hari pertama dipasang, tidak
+perlu menunggu snapshot 30 hari pertama.
 
 `notebooks/06_survival_analysis.ipynb` adalah eksperimen **terpisah** dan
 **opsional** (analisis waktu-ke-kerusakan/C-index) - tidak dipakai oleh

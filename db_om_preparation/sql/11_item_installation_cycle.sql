@@ -1,5 +1,6 @@
 -- Siklus PART dimulai hanya oleh INSTALLED dengan waktu tepercaya.
 -- RECON sudah dikeluarkan dari operational timeline dan tidak membuka siklus.
+DROP VIEW IF EXISTS analytics.item_current_snapshot_features;
 DROP MATERIALIZED VIEW IF EXISTS analytics.eda_feature_stability_monthly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.eda_snapshot_cadence_comparison;
 DROP VIEW IF EXISTS analytics.eda_target_class_distribution;

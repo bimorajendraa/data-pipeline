@@ -25,6 +25,9 @@ BEGIN
     -- Objek EDA tahap 11-13 bergantung pada failure/timeline cache. Hapus
     -- terlebih dahulu agar pipeline lengkap tetap idempotent saat dijalankan ulang.
     -- Layer modeling tahap 14 harus turun sebelum hierarchy/observation.
+    -- Layer scoring tahap 15 bergantung pada item_installation_cycle, harus
+    -- turun paling awal dari semuanya.
+    EXECUTE 'DROP VIEW IF EXISTS analytics.item_current_snapshot_features';
     EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_model_audit';
     EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_feature_quality_summary';
     EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_challenger_features';

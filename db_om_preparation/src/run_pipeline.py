@@ -25,6 +25,7 @@ SQL_FILES = [
     "12b_item_terminal_hierarchy.sql",
     "13_eda_views.sql",
     "14_feature_engineering.sql",
+    "15_current_risk_snapshot.sql",
 ]
 
 # Guard tambahan: file pipeline tidak boleh menulis ke tiga schema sumber.

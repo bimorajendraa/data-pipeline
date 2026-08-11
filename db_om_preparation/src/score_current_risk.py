@@ -2,14 +2,19 @@
 (belum rusak, belum dipasang ulang), memakai model yang sudah dilatih dan
 disimpan oleh train_final_model.py.
 
-Fitur diambil dari snapshot 30-harian TERAKHIR yang tersedia untuk setiap
-cycle yang masih berjalan (analytics.item_observation_30d dengan
-cycle_end_reason = 'RIGHT_CENSORED_AT_DATA_END') - bukan dihitung ulang -
-supaya persis konsisten dengan logika point-in-time yang sudah divalidasi
-di pipeline SQL. Karena snapshot dibuat setiap 30 hari, skor tiap PART bisa
-"basi" sampai ~29 hari; kolom hari_sejak_snapshot menunjukkan itu secara
-eksplisit. PART yang baru dipasang kurang dari 30 hari sebelum data
-terakhir belum akan muncul di sini karena belum sempat mendapat snapshot.
+Fitur diambil dari analytics.item_current_snapshot_features (sql/15) yang
+menghitung ulang fitur historis PERSIS pada observation_on = kejadian
+terbaru yang tercatat di database (dataset_max_event_on) untuk setiap cycle
+yang masih aktif - bukan snapshot grid 30-harian dari dataset training
+(analytics.item_observation_30d), yang bisa tertinggal sampai ~29 hari.
+Rumus fiturnya identik dengan yang dipakai training (lihat komentar di
+sql/15_current_risk_snapshot.sql), jadi model yang sama tetap valid dipakai
+tanpa dilatih ulang. Kolom hari_sejak_data_terakhir menunjukkan seberapa
+baru DATABASE itu sendiri (dataset_max_event_on vs waktu saat ini) - bukan
+lagi soal snapshot yang basi, karena sekarang skornya selalu dihitung dari
+kejadian terbaru yang tersedia. PART yang baru dipasang tetap langsung
+mendapat skor sejak hari pertama, karena tidak lagi bergantung pada grid
+30 hari.
 """
 
 from __future__ import annotations
@@ -39,24 +44,11 @@ def query(sql: str) -> pd.DataFrame:
 def load_active_snapshots(feature_columns: list[str]) -> pd.DataFrame:
     columns_sql = ", ".join(f"f.{c}" for c in feature_columns)
     data = query(f"""
-        WITH latest_snapshot AS (
-            SELECT DISTINCT ON (installation_cycle_id)
-                installation_cycle_id, item_identifier_clean, observation_on
-            FROM analytics.item_observation_30d
-            WHERE cycle_end_reason = 'RIGHT_CENSORED_AT_DATA_END'
-            ORDER BY installation_cycle_id, observation_on DESC
-        ), boundary AS (
-            SELECT MAX(created_on) AS dataset_max_event_on
-            FROM analytics.item_journey_operational_timeline
-        )
         SELECT f.installation_cycle_id, f.item_identifier_clean, f.observation_on,
             {columns_sql},
-            EXTRACT(EPOCH FROM (b.dataset_max_event_on - f.observation_on)) / 86400.0
-                AS hari_sejak_snapshot
-        FROM analytics.failure_30d_baseline_features f
-        JOIN latest_snapshot ls
-          USING (installation_cycle_id, item_identifier_clean, observation_on)
-        CROSS JOIN boundary b
+            EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - f.observation_on)) / 86400.0
+                AS hari_sejak_data_terakhir
+        FROM analytics.item_current_snapshot_features f
     """)
     return data
 
@@ -105,7 +97,7 @@ def main() -> int:
     )
 
     result = active[["installation_cycle_id", "item_identifier_clean", "observation_on",
-                      "hari_sejak_snapshot"]].copy()
+                      "hari_sejak_data_terakhir"]].copy()
     result["part_model_category"] = active["part_model_category"]
     result["client_category"] = active["client_category"]
     result["kelompok_risiko"] = pd.Categorical(tier, categories=["Tinggi", "Sedang", "Rendah"], ordered=True)
@@ -130,7 +122,7 @@ def main() -> int:
     print("\nContoh PART di kelompok Tinggi (skor mentah tertinggi lebih dulu):")
     top_high = result.loc[result["kelompok_risiko"].eq("Tinggi")].head(10)[
         ["peringkat", "item_identifier_clean", "part_model_category",
-         "kelompok_risiko", "skor_risiko_30_hari", "hari_sejak_snapshot"]
+         "kelompok_risiko", "skor_risiko_30_hari", "hari_sejak_data_terakhir"]
     ]
     with pd.option_context("display.max_columns", None, "display.width", 120):
         print(top_high.to_string(index=False) if len(top_high) else "(kosong)")
