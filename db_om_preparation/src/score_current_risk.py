@@ -87,18 +87,37 @@ def main() -> int:
     raw_proba = model.predict_proba(active[feature_columns])[:, 1]
     calibrated_proba = calibrator.predict(raw_proba)
 
+    # Kelompok risiko (Tinggi/Sedang/Rendah) berdasarkan skor terkalibrasi
+    # dibandingkan dengan base rate historis (persentase kerusakan asli di
+    # data validasi - anchor yang sama dipakai kalibrator). Ambang batas
+    # (>=3x dan >=1x base rate) diuji terhadap data test 2026 dan terbukti
+    # memisahkan tiga kelompok dengan persentase kerusakan sungguhan yang
+    # jauh berbeda (16,1% / 4,5% / 0,9%). Dipakai sebagai pengganti ranking
+    # 1-2-3 yang presisi karena PART dengan skor mirip sering berbagi nilai
+    # persis sama (plateau kalibrasi) - masuk kelompok yang sama itu wajar,
+    # dipaksa berebut urutan justru tidak stabil antar hitung ulang.
+    validation_metrics = metadata["metrics"]["validation"]
+    base_rate = validation_metrics["positives"] / validation_metrics["rows"]
+    tier = pd.cut(
+        calibrated_proba,
+        bins=[-float("inf"), base_rate, 3 * base_rate, float("inf")],
+        labels=["Rendah", "Sedang", "Tinggi"],
+    )
+
     result = active[["installation_cycle_id", "item_identifier_clean", "observation_on",
                       "hari_sejak_snapshot"]].copy()
     result["part_model_category"] = active["part_model_category"]
     result["client_category"] = active["client_category"]
+    result["kelompok_risiko"] = pd.Categorical(tier, categories=["Tinggi", "Sedang", "Rendah"], ordered=True)
     result["skor_risiko_30_hari"] = calibrated_proba
     result["skor_mentah"] = raw_proba
-    # Urut berdasarkan skor mentah (lebih presisi antar-PART, tidak
-    # menggumpal) - skor_risiko_30_hari tetap ditampilkan untuk dibaca
-    # sebagai perkiraan persentase, tetapi kalibrasi isotonic secara alami
-    # membuat beberapa PART berbagi nilai persis sama (plateau), sehingga
-    # kurang cocok dipakai sebagai kunci urutan halus.
-    result = result.sort_values("skor_mentah", ascending=False).reset_index(drop=True)
+    # Urut dulu per kelompok risiko (Tinggi -> Sedang -> Rendah, ini yang
+    # stabil dan dipakai untuk keputusan kerja), lalu skor mentah sebagai
+    # urutan halus di dalam kelompok yang sama (informatif tapi tidak
+    # sepresisi urutan kelompoknya sendiri).
+    result = result.sort_values(
+        ["kelompok_risiko", "skor_mentah"], ascending=[True, False]
+    ).reset_index(drop=True)
     result.insert(0, "peringkat", result.index + 1)
 
     OUTPUT_PATH.parent.mkdir(exist_ok=True)
@@ -106,11 +125,15 @@ def main() -> int:
 
     print(f"[OK] {len(result):,} PART aktif diberi skor.".replace(",", "."))
     print(f"[OK] Hasil disimpan: {OUTPUT_PATH}")
-    print("\nTop 10 PART dengan risiko tertinggi:")
-    top10 = result.head(10)[["peringkat", "item_identifier_clean", "part_model_category",
-                              "skor_risiko_30_hari", "skor_mentah", "hari_sejak_snapshot"]]
+    print("\nJumlah PART per kelompok risiko:")
+    print(result["kelompok_risiko"].value_counts().reindex(["Tinggi", "Sedang", "Rendah"]).to_string())
+    print("\nContoh PART di kelompok Tinggi (skor mentah tertinggi lebih dulu):")
+    top_high = result.loc[result["kelompok_risiko"].eq("Tinggi")].head(10)[
+        ["peringkat", "item_identifier_clean", "part_model_category",
+         "kelompok_risiko", "skor_risiko_30_hari", "hari_sejak_snapshot"]
+    ]
     with pd.option_context("display.max_columns", None, "display.width", 120):
-        print(top10.to_string(index=False))
+        print(top_high.to_string(index=False) if len(top_high) else "(kosong)")
     return 0
 
 

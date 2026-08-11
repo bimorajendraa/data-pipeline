@@ -51,6 +51,7 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `notebooks/03_ablation_study.ipynb` | Melatih CatBoost bertahap per kelompok fitur (model+umur -> +riwayat kerusakan -> +aktivitas/klien -> +lokasi -> +hierarki TERMINAL) untuk melihat fitur mana yang benar-benar menambah akurasi | Tabel kenaikan PR-AUC per kelompok, precision/recall@K, dan rekomendasi kombinasi fitur paling sederhana yang tetap kuat |
 | `notebooks/04_sensitivity_analysis.ipynb` | Membandingkan tiga aturan kelayakan label negatif (Normal, Strict berbasis jarak waktu, dan RECON-verified berbasis ada/tidaknya RECON belakangan) untuk menguji ketahanan model terhadap ketidakpastian label negatif | Tabel perbandingan jumlah data, ROC-AUC/PR-AUC, precision/recall@K, dan rekomendasi aturan kelayakan terbaik |
 | `notebooks/05_final_baseline_tuned.ipynb` | Model baseline resmi: fitur kelompok C + aturan RECON-verified, hyperparameter disetel terbatas, dicek konsistensi train/validasi/test (deteksi overfitting), dan probabilitas dikalibrasi | Tabel pencarian hyperparameter, tabel konsistensi ROC-AUC per split, kurva kalibrasi sebelum/sesudah, dan model baseline resmi |
+| `notebooks/06_survival_analysis.ipynb` | **Eksperimen terpisah** (tidak menggantikan model resmi): Cox Proportional Hazards per siklus pasang (bukan snapshot 30-harian) untuk mengurutkan PART mana yang waktunya paling dekat ke kerusakan | Kurva Kaplan-Meier, koefisien Cox, tabel C-index train/validasi/test, dan kesimpulan jujur soal batasan/kegunaannya |
 | `src/export_eda_report.py` | Menjalankan kedua notebook, mengekspor HTML, dan membuat ringkasan eksekutif dari hasil database terkini | `reports/business_eda.html`, `reports/feature_selection_eda.html`, dan `reports/eda_executive_summary.md` |
 | `src/run_pipeline.py` | Menjalankan semua SQL secara urut dan transactional per file | Seluruh view analytics tersedia |
 | `src/export_quality_report.py` | Mengekspor profiling dan quality summary | Dua CSV di folder `reports` |
@@ -167,6 +168,12 @@ memakai snapshot 30-harian terakhir yang tersedia untuk tiap PART - kolom
 `hari_sejak_snapshot` di hasilnya menunjukkan seberapa baru datanya. PART
 yang baru dipasang kurang dari 30 hari sebelum data terakhir belum akan
 muncul karena belum sempat mendapat snapshot pertama.
+
+`notebooks/06_survival_analysis.ipynb` adalah eksperimen **terpisah** dan
+**opsional** (analisis waktu-ke-kerusakan/C-index) - tidak dipakai oleh
+`train_final_model.py` maupun `score_current_risk.py`, dan tidak wajib
+dijalankan untuk memakai model resmi. Butuh dependensi tambahan
+`lifelines` (lihat `requirements.txt`).
 
 Untuk mengeksekusi notebook secara otomatis dan membuat HTML:
 

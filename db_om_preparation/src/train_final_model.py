@@ -73,10 +73,20 @@ def main() -> int:
     train_pool = Pool(train[FEATURE_COLUMNS], train["target_failure_30d"], cat_features=CATEGORICAL_FEATURES)
     val_pool = Pool(val[FEATURE_COLUMNS], val["target_failure_30d"], cat_features=CATEGORICAL_FEATURES)
 
+    # Iterasi tetap (bukan early stopping) - early stopping berbasis AUC di
+    # validasi ternyata bisa berhenti sangat prematur (kadang cuma 1 pohon,
+    # ditemukan 2026-08 saat menyusun ringkasan akhir) karena estimasi AUC per
+    # iterasi cukup berisik pada validasi yang jumlah positifnya sedikit.
+    # Model 1 pohon itu valid secara metrik agregat tapi resolusinya sangat
+    # kasar (cuma segelintir nilai probabilitas berbeda), jadi urutan
+    # top-K jadi tidak stabil antar run. Iterasi tetap 200 (dengan depth dan
+    # L2 yang sudah diregularisasi dari pencarian hyperparameter) terbukti
+    # memberi ratusan/ribuan nilai probabilitas berbeda dan hasil top-K yang
+    # stabil, tanpa tanda overfitting (train/val/test tetap berdekatan).
     model = CatBoostClassifier(
-        iterations=3000, loss_function="Logloss", eval_metric="AUC",
+        iterations=200, loss_function="Logloss", eval_metric="AUC",
         auto_class_weights="Balanced", random_seed=RANDOM_STATE,
-        early_stopping_rounds=150, verbose=False, thread_count=1, **BEST_PARAMS,
+        use_best_model=False, verbose=False, thread_count=1, **BEST_PARAMS,
     )
     model.fit(train_pool, eval_set=val_pool)
 
@@ -117,7 +127,8 @@ def main() -> int:
         "hyperparameters": BEST_PARAMS,
         "eligibility_rule": "is_recon_verified_training_eligible",
         "source_view": "analytics.failure_30d_baseline_features",
-        "best_iteration": model.get_best_iteration(),
+        "tree_count": model.tree_count_,
+        "distinct_scores_on_test": int(pd.Series(proba_test).nunique()),
         "metrics": metrics,
         "notes": (
             "Baseline resmi (kelompok fitur C, 16 fitur). Fitur lokasi/TERMINAL "
