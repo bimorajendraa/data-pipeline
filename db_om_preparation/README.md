@@ -58,6 +58,7 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `src/export_quality_report.py` | Mengekspor profiling dan quality summary | Dua CSV di folder `reports` |
 | `src/train_final_model.py` | Melatih model baseline resmi (fitur kelompok C, aturan RECON-verified, hyperparameter dari `05_final_baseline_tuned.ipynb`) dan menyimpan model + kalibrator | `models/failure_30d_baseline_catboost.cbm`, `models/failure_30d_baseline_calibrator.joblib`, `models/failure_30d_baseline_metadata.json` |
 | `src/score_current_risk.py` | Memberi skor risiko 30 hari untuk PART yang saat ini masih aktif, memakai model tersimpan | `reports/current_risk_ranking.csv` |
+| `src/train_multi_horizon_models.py` | **Challenger terpisah** (tidak menggantikan model 30 hari resmi): melatih model 90 dan 180 hari dengan fitur/hyperparameter identik, plus pengecekan monotonicity P(30d)<=P(90d)<=P(180d) | `models/failure_90d_*`, `models/failure_180d_*`, `models/failure_multi_horizon_metadata.json` |
 
 Kesimpulan kesiapan, kejanggalan, risiko timeline, dan keputusan berikutnya
 dibuat otomatis di `reports/eda_executive_summary.md` ketika laporan diekspor.
@@ -178,6 +179,15 @@ perlu menunggu snapshot 30 hari pertama.
 `train_final_model.py` maupun `score_current_risk.py`, dan tidak wajib
 dijalankan untuk memakai model resmi. Butuh dependensi tambahan
 `lifelines` (lihat `requirements.txt`).
+
+`python src\train_multi_horizon_models.py` melatih challenger 90/180 hari
+(fitur & hyperparameter identik dengan model 30 hari resmi) - juga **terpisah
+dan opsional**, tidak menimpa model resmi. Evaluasi TEST_2026 untuk 180 hari
+punya keterbatasan nyata: observation_on setelah (dataset_max_event_on - 180
+hari) hanya bisa lolos syarat kelayakan lewat siklus yang SUDAH gagal (hasil
+"tidak gagal" belum bisa dikonfirmasi penuh sampai windownya berakhir) -
+angka yang bisa dipercaya ada di `test_2026_clean_subset` pada
+`models/failure_multi_horizon_metadata.json`, bukan angka gabungan mentah.
 
 Untuk mengeksekusi notebook secara otomatis dan membuat HTML:
 

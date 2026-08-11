@@ -6,6 +6,7 @@
 DROP VIEW IF EXISTS analytics.failure_30d_model_audit;
 DROP VIEW IF EXISTS analytics.failure_30d_feature_quality_summary;
 DROP VIEW IF EXISTS analytics.failure_30d_challenger_features;
+DROP VIEW IF EXISTS analytics.failure_multi_horizon_labels;
 DROP VIEW IF EXISTS analytics.failure_30d_model_labels;
 DROP VIEW IF EXISTS analytics.failure_30d_feature_catalog;
 DO $drop_baseline_features$
@@ -204,6 +205,50 @@ SELECT installation_cycle_id, item_identifier_clean, observation_on,
             THEN 'EXCLUDED_VALIDATION_EMBARGO'
         ELSE 'TEST_2026'
     END AS temporal_split
+FROM analytics.item_observation_30d;
+
+-- Target multi-horizon (30/90/180 hari, Bagian 12 master prompt), TERPISAH
+-- dari failure_30d_model_labels supaya classifier 30 hari resmi tidak
+-- tersentuh. Embargo per horizon melebar mengikuti panjang window-nya
+-- sendiri (sama prinsipnya dengan versi 30 hari) - konsekuensinya
+-- TEST_2026 makin menyusut untuk horizon yang lebih panjang karena data
+-- baru sampai awal Agustus 2026 (dataset_max_event_on): 90 hari masih
+-- 24.714 baris, tapi 180 hari tinggal 5.243 baris (diperiksa 2026-08,
+-- dilaporkan apa adanya - bukan alasan untuk tidak membangun horizon ini,
+-- tapi wajib dibaca sebagai sampel test yang jauh lebih kecil/berisik).
+CREATE VIEW analytics.failure_multi_horizon_labels AS
+SELECT installation_cycle_id, item_identifier_clean, observation_on,
+    target_failure_30d, target_failure_90d, target_failure_180d,
+    is_recon_verified_training_eligible AS is_30d_training_eligible,
+    is_recon_verified_training_eligible_90d AS is_90d_training_eligible,
+    is_recon_verified_training_eligible_180d AS is_180d_training_eligible,
+    CASE
+        WHEN NOT is_recon_verified_training_eligible THEN 'EXCLUDED_LABEL_QUALITY'
+        WHEN observation_on < DATE '2014-01-01' THEN 'EXCLUDED_PRE_2014'
+        WHEN observation_on + INTERVAL '30 days' < DATE '2025-01-01' THEN 'TRAIN_2014_2024'
+        WHEN observation_on < DATE '2025-01-01' THEN 'EXCLUDED_TRAIN_EMBARGO'
+        WHEN observation_on + INTERVAL '30 days' < DATE '2026-01-01' THEN 'VALIDATION_2025'
+        WHEN observation_on < DATE '2026-01-01' THEN 'EXCLUDED_VALIDATION_EMBARGO'
+        ELSE 'TEST_2026'
+    END AS temporal_split_30d,
+    CASE
+        WHEN NOT is_recon_verified_training_eligible_90d THEN 'EXCLUDED_LABEL_QUALITY'
+        WHEN observation_on < DATE '2014-01-01' THEN 'EXCLUDED_PRE_2014'
+        WHEN observation_on + INTERVAL '90 days' < DATE '2025-01-01' THEN 'TRAIN_2014_2024'
+        WHEN observation_on < DATE '2025-01-01' THEN 'EXCLUDED_TRAIN_EMBARGO'
+        WHEN observation_on + INTERVAL '90 days' < DATE '2026-01-01' THEN 'VALIDATION_2025'
+        WHEN observation_on < DATE '2026-01-01' THEN 'EXCLUDED_VALIDATION_EMBARGO'
+        ELSE 'TEST_2026'
+    END AS temporal_split_90d,
+    CASE
+        WHEN NOT is_recon_verified_training_eligible_180d THEN 'EXCLUDED_LABEL_QUALITY'
+        WHEN observation_on < DATE '2014-01-01' THEN 'EXCLUDED_PRE_2014'
+        WHEN observation_on + INTERVAL '180 days' < DATE '2025-01-01' THEN 'TRAIN_2014_2024'
+        WHEN observation_on < DATE '2025-01-01' THEN 'EXCLUDED_TRAIN_EMBARGO'
+        WHEN observation_on + INTERVAL '180 days' < DATE '2026-01-01' THEN 'VALIDATION_2025'
+        WHEN observation_on < DATE '2026-01-01' THEN 'EXCLUDED_VALIDATION_EMBARGO'
+        ELSE 'TEST_2026'
+    END AS temporal_split_180d
 FROM analytics.item_observation_30d;
 
 CREATE MATERIALIZED VIEW analytics.failure_30d_baseline_features AS

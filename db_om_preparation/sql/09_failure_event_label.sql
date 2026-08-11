@@ -31,6 +31,7 @@ BEGIN
     EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_model_audit';
     EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_feature_quality_summary';
     EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_challenger_features';
+    EXECUTE 'DROP VIEW IF EXISTS analytics.failure_multi_horizon_labels';
     EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS analytics.failure_30d_baseline_features';
     EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_model_labels';
     EXECUTE 'DROP VIEW IF EXISTS analytics.failure_30d_feature_catalog';

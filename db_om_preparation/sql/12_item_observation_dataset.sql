@@ -4,6 +4,7 @@
 DROP VIEW IF EXISTS analytics.failure_30d_model_audit;
 DROP VIEW IF EXISTS analytics.failure_30d_feature_quality_summary;
 DROP VIEW IF EXISTS analytics.failure_30d_challenger_features;
+DROP VIEW IF EXISTS analytics.failure_multi_horizon_labels;
 DROP VIEW IF EXISTS analytics.failure_30d_model_labels;
 DROP VIEW IF EXISTS analytics.failure_30d_feature_catalog;
 DO $drop_baseline_features$
@@ -73,7 +74,37 @@ WITH snapshot AS (
             c.is_recon_verified_negative_eligible
             AND gs.observation_on + INTERVAL '30 days'
                 <= LEAST(c.cycle_end_on, c.dataset_max_event_on)
-        ) AS is_recon_verified_target_observable
+        ) AS is_recon_verified_target_observable,
+        -- Target multi-horizon (90/180 hari, Bagian 12 master prompt). Hanya
+        -- aturan RECON-verified yang dipakai (sudah terbukti paling stabil
+        -- lewat sensitivity analysis 04_sensitivity_analysis.ipynb) - tidak
+        -- perlu mengulang varian legacy/strict untuk horizon baru. Data
+        -- runway diperiksa dulu (2026-08): TEST_2026 masih punya 24.714 baris
+        -- untuk 90 hari, tapi menyusut ke 5.243 baris untuk 180 hari karena
+        -- dataset_max_event_on baru sampai 2026-08-03 - dilaporkan apa
+        -- adanya sebagai keterbatasan, bukan disembunyikan.
+        c.failure_onset_on IS NOT NULL
+          AND c.failure_onset_on > gs.observation_on
+          AND c.failure_onset_on <= gs.observation_on + INTERVAL '90 days' AS target_failure_90d,
+        (c.failure_onset_on IS NOT NULL
+          AND c.failure_onset_on > gs.observation_on
+          AND c.failure_onset_on <= gs.observation_on + INTERVAL '90 days')
+        OR (
+            c.is_recon_verified_negative_eligible
+            AND gs.observation_on + INTERVAL '90 days'
+                <= LEAST(c.cycle_end_on, c.dataset_max_event_on)
+        ) AS is_recon_verified_target_observable_90d,
+        c.failure_onset_on IS NOT NULL
+          AND c.failure_onset_on > gs.observation_on
+          AND c.failure_onset_on <= gs.observation_on + INTERVAL '180 days' AS target_failure_180d,
+        (c.failure_onset_on IS NOT NULL
+          AND c.failure_onset_on > gs.observation_on
+          AND c.failure_onset_on <= gs.observation_on + INTERVAL '180 days')
+        OR (
+            c.is_recon_verified_negative_eligible
+            AND gs.observation_on + INTERVAL '180 days'
+                <= LEAST(c.cycle_end_on, c.dataset_max_event_on)
+        ) AS is_recon_verified_target_observable_180d
     FROM analytics.item_installation_cycle c
     CROSS JOIN LATERAL generate_series(c.installed_on, c.cycle_end_on - INTERVAL '1 microsecond', INTERVAL '30 days') gs(observation_on)
     WHERE c.is_initial_model_cohort AND c.installed_on < c.cycle_end_on
@@ -183,7 +214,7 @@ SELECT installation_cycle_id, item_identifier_clean, observation_on,
     failure_confirmed_on AS next_failure_confirmed_on,
     failure_label_basis AS next_failure_label_basis,
     failure_place_clean AS next_failure_place_clean,
-    target_failure_30d,
+    target_failure_30d, target_failure_90d, target_failure_180d,
     cycle_end_reason, cycle_quality_status, observation_end_reason,
     item_last_seen_on, item_observation_end_on,
     is_activity_coverage_confirmed, is_cycle_label_reliable,
@@ -191,9 +222,12 @@ SELECT installation_cycle_id, item_identifier_clean, observation_on,
     is_recon_verified_negative_eligible, has_recon_after_last_seen,
     is_legacy_target_observable, is_target_observable,
     is_strict_target_observable, is_recon_verified_target_observable,
+    is_recon_verified_target_observable_90d, is_recon_verified_target_observable_180d,
     is_target_observable AS is_training_eligible,
     is_strict_target_observable AS is_strict_training_eligible,
     is_recon_verified_target_observable AS is_recon_verified_training_eligible,
+    is_recon_verified_target_observable_90d AS is_recon_verified_training_eligible_90d,
+    is_recon_verified_target_observable_180d AS is_recon_verified_training_eligible_180d,
     CASE WHEN target_failure_30d THEN 'POSITIVE_FAILURE_WITHIN_30D'
          WHEN cycle_end_reason = 'REINSTALL_WITHOUT_RECORDED_FAILURE'
             THEN 'EXCLUDED_UNKNOWN_REINSTALL_WITHOUT_FAILURE'
@@ -225,11 +259,14 @@ SELECT installation_cycle_id, item_identifier_clean, observation_on,
 FROM analytics.item_observation_30d;
 
 CREATE OR REPLACE VIEW analytics.item_observation_30d_labels AS
-SELECT installation_cycle_id, observation_on, target_failure_30d,
+SELECT installation_cycle_id, observation_on,
+    target_failure_30d, target_failure_90d, target_failure_180d,
     is_training_eligible, is_strict_training_eligible,
     is_recon_verified_training_eligible,
+    is_recon_verified_training_eligible_90d, is_recon_verified_training_eligible_180d,
     is_legacy_target_observable, is_target_observable,
     is_strict_target_observable, is_recon_verified_target_observable,
+    is_recon_verified_target_observable_90d, is_recon_verified_target_observable_180d,
     target_quality_status,
     cycle_end_reason, cycle_quality_status, observation_end_reason,
     is_activity_coverage_confirmed, is_cycle_label_reliable,

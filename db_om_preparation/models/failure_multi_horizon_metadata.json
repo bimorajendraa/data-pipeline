@@ -1,0 +1,97 @@
+{
+  "trained_at_utc": "2026-08-11T07:22:37.939789+00:00",
+  "feature_columns": [
+    "part_model_category",
+    "client_category",
+    "installation_age_band",
+    "log_days_since_installation",
+    "log_total_prior_events",
+    "log_prior_failure_count",
+    "has_prior_failure",
+    "log_prior_corrective_count",
+    "has_prior_corrective",
+    "log_days_since_last_corrective",
+    "log_prior_distinct_places",
+    "log_prior_corrective_30d",
+    "log_prior_failure_365d",
+    "log_prior_events_180d",
+    "log_previous_cycle_lifetime_mean",
+    "has_previous_cycle",
+    "month_sin",
+    "month_cos"
+  ],
+  "categorical_features": [
+    "part_model_category",
+    "client_category",
+    "installation_age_band"
+  ],
+  "hyperparameters": {
+    "depth": 4,
+    "learning_rate": 0.03,
+    "l2_leaf_reg": 10
+  },
+  "notes": "Model challenger 90/180 hari, fitur & hyperparameter identik dengan model resmi 30 hari (train_final_model.py) supaya perbandingan adil. TIDAK menggantikan model 30 hari resmi. Lihat docstring modul untuk keterbatasan evaluasi TEST_2026 180 hari (boundary artifact).",
+  "horizons": {
+    "90d": {
+      "roc_auc_train": 0.8496159562171873,
+      "roc_auc_test": 0.7525494973467083,
+      "pr_auc_test": 0.19712442011276904,
+      "brier_raw": 0.12833273549172117,
+      "brier_calibrated": 0.06328735540128066,
+      "rows": {
+        "train": 244190,
+        "val": 39742,
+        "test": 25600
+      },
+      "positives": {
+        "train": 10306,
+        "val": 2095,
+        "test": 1876
+      },
+      "base_rate_test": 0.07328125
+    },
+    "180d": {
+      "roc_auc_train": 0.8491516068620388,
+      "roc_auc_test": 0.6708148345972724,
+      "pr_auc_test": 0.5151358717955823,
+      "brier_raw": 0.23865133108532785,
+      "brier_calibrated": 0.2725647873088393,
+      "rows": {
+        "train": 233181,
+        "val": 25009,
+        "test": 7492
+      },
+      "positives": {
+        "train": 19002,
+        "val": 2504,
+        "test": 2791
+      },
+      "base_rate_test": 0.3725306994127069,
+      "test_metric_warning": "TEST_2026 gabungan TERKONTAMINASI boundary artifact - lihat test_2026_clean_subset.",
+      "test_2026_clean_subset": {
+        "description": "observation_on <= 2026-02-04 saja - satu-satunya rentang dimana hasil negatif sudah bisa dikonfirmasi penuh, sama seperti positif.",
+        "n": 5237,
+        "base_rate": 0.10330341798739737,
+        "roc_auc": 0.6865844451721999,
+        "pr_auc": 0.19276740514495916,
+        "brier_calibrated": 0.0931582911346255
+      }
+    }
+  },
+  "monotonicity_check": {
+    "description": "P(gagal <=30 hari) <= P(gagal <=90 hari) <= P(gagal <=180 hari), diperiksa baris-per-baris pada TEST_2026 yang eligible di ketiga horizon sekaligus, memakai skor terkalibrasi. 'population_clean_subset_only' membuang baris boundary-contaminated (observation_on > dataset_max_event_on - 180 hari).",
+    "population_all": {
+      "n": 7492,
+      "violation_30_vs_90_pct": 0.71,
+      "violation_90_vs_180_pct": 18.98,
+      "violation_30_vs_180_pct": 0.4
+    },
+    "population_clean_subset_only": {
+      "n": 5237,
+      "violation_30_vs_90_pct": 0.38,
+      "violation_90_vs_180_pct": 20.97,
+      "violation_30_vs_180_pct": 0.55
+    },
+    "interpretation": "Pelanggaran 30d-vs-90d dan 30d-vs-180d biasanya sangat jarang (<1%). Pelanggaran 90d-vs-180d cenderung jauh lebih tinggi BAHKAN pada subset bersih - ini bukan artefak boundary, melainkan konsekuensi melatih 3 model independen (tidak ada constraint yang memaksa urutan probabilitas antar-horizon konsisten per baris, sesuai antisipasi Bagian 12 master prompt). Discrete-time hazard/survival bersama (Fase 6) akan menjamin ini secara struktural."
+  }
+}
