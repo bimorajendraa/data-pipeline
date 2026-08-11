@@ -81,6 +81,9 @@ SELECT
     installation_cycle_id,
     item_identifier_clean,
     observation_on,
+    item_model_code_clean AS part_model_code_raw,
+    part_model_cumulative_support,
+    days_since_installation AS raw_days_since_installation,
     CASE
         WHEN item_model_code_clean IS NULL THEN 'UNKNOWN'
         WHEN part_model_cumulative_support < 300 THEN 'LOW_HISTORICAL_SUPPORT'

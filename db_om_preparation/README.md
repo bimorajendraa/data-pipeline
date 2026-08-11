@@ -61,6 +61,7 @@ tabelnya kosong pada backup; tabel sumbernya tetap dibiarkan utuh.
 | `src/score_current_risk.py` | Memberi skor risiko 30 hari untuk PART yang saat ini masih aktif, memakai model tersimpan | `reports/current_risk_ranking.csv` |
 | `src/train_multi_horizon_models.py` | **Challenger terpisah** (tidak menggantikan model 30 hari resmi): melatih model 90 dan 180 hari dengan fitur/hyperparameter identik, plus pengecekan monotonicity P(30d)<=P(90d)<=P(180d) | `models/failure_90d_*`, `models/failure_180d_*`, `models/failure_multi_horizon_metadata.json` |
 | `src/score_multi_horizon_risk.py` | Skor 30/90/180 hari untuk PART aktif lewat "hazard chaining" - memakai model 30 hari resmi apa adanya (bukan model baru), fitur diputar maju per 30 hari. Menjamin monotonicity secara matematis DAN terbukti lebih akurat daripada classifier 90/180 hari terpisah pada backtest TEST_2026 (lihat `hazard_chaining_vs_direct_classifier` di metadata) | `reports/current_risk_ranking_multi_horizon.csv` |
+| `src/score_final_risk_report.py` | Laporan risiko akhir per PART aktif: Risk 30/90/180 hari (hazard chaining), kelompok risiko, estimasi jendela waktu kegagalan (hanya untuk kelompok Tinggi/Sedang - tidak dipaksakan untuk Rendah), dan keandalan prediksi berdasarkan dukungan historis tipe PART. Mengikuti format Bagian 28 master prompt | `reports/final_risk_report.csv` |
 
 Kesimpulan kesiapan, kejanggalan, risiko timeline, dan keputusan berikutnya
 dibuat otomatis di `reports/eda_executive_summary.md` ketika laporan diekspor.
