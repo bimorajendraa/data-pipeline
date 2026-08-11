@@ -93,5 +93,20 @@
       "violation_30_vs_180_pct": 0.55
     },
     "interpretation": "Pelanggaran 30d-vs-90d dan 30d-vs-180d biasanya sangat jarang (<1%). Pelanggaran 90d-vs-180d cenderung jauh lebih tinggi BAHKAN pada subset bersih - ini bukan artefak boundary, melainkan konsekuensi melatih 3 model independen (tidak ada constraint yang memaksa urutan probabilitas antar-horizon konsisten per baris, sesuai antisipasi Bagian 12 master prompt). Discrete-time hazard/survival bersama (Fase 6) akan menjamin ini secara struktural."
+  },
+  "hazard_chaining_vs_direct_classifier": {
+    "description": "Fase 6 lanjutan: alih-alih melatih classifier 90/180 hari terpisah, model 30 hari RESMI (tidak dilatih ulang) dipakai sebagai estimator hazard 30-harian, fitur 'diputar maju' 30 hari demi 30 hari (umur & waktu sejak corrective terakhir bertambah sesuai waktu, fitur riwayat lain dibekukan - asumsi tidak ada kejadian baru), risiko kumulatif dihitung lewat survival chaining: S(30k hari)=produk(1-hazard_langkah_i), P(gagal)=1-S. Ini MENJAMIN monotonicity secara matematis (0 pelanggaran, bukan ~19-21% seperti classifier terpisah). Dibandingkan pada populasi & ground truth TEST_2026 yang SAMA PERSIS dengan monotonicity_check di atas. Implementasi: src/score_multi_horizon_risk.py.",
+    "90d": {
+      "chained_roc_auc": 0.6989, "chained_pr_auc": 0.4513, "chained_brier": 0.1971,
+      "direct_classifier_roc_auc": 0.6636, "direct_classifier_pr_auc": 0.3824, "direct_classifier_brier": 0.2044,
+      "n": 7492
+    },
+    "180d_clean_subset": {
+      "chained_roc_auc": 0.7328, "chained_pr_auc": 0.2043, "chained_brier": 0.0891,
+      "direct_classifier_roc_auc": 0.6866, "direct_classifier_pr_auc": 0.1928, "direct_classifier_brier": 0.0932,
+      "n": 5237,
+      "note": "Populasi observation_on <= 2026-02-04 saja, sama seperti test_2026_clean_subset di atas."
+    },
+    "conclusion": "Hazard chaining MENANG di ROC-AUC/PR-AUC/Brier untuk kedua horizon, sekaligus menjamin monotonicity secara struktural dan tidak butuh model baru (memakai model 30 hari resmi apa adanya). Kemungkinan penjelasan: model 30 hari dilatih dari jauh lebih banyak baris (251.568 vs 244.190/233.181) pada tugas prediksi yang lebih pendek/lebih mudah, dan menggabungkan beberapa taksiran hazard pendek yang solid lewat perkalian survival cenderung lebih stabil daripada meminta satu model belajar langsung target jangka panjang yang lebih jarang dan lebih bising dari fitur titik-waktu yang sama. Direkomendasikan sebagai pendekatan multi-horizon yang lebih disukai dibanding classifier 90/180 hari terpisah (Fase 5) untuk kebutuhan operasional - model 90/180 hari terpisah tetap disimpan sebagai pembanding/dokumentasi historis, bukan dihapus."
   }
 }
