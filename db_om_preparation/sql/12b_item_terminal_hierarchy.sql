@@ -137,7 +137,19 @@ SELECT o.*,
         PARTITION BY (CASE WHEN p.is_parent_link_valid THEN p.terminal_model_code END)
         ORDER BY o.observation_on
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-    ) AS terminal_model_cumulative_support
+    ) AS terminal_model_cumulative_support,
+    -- Dukungan historis kumulatif (point-in-time) per tipe/model PART itu
+    -- sendiri. Rare-category ablation (2026-08, lihat catatan pada 14) menguji
+    -- ini secara terkontrol pada TEST_2026: mengelompokkan tipe PART dengan
+    -- dukungan historis rendah terbukti menaikkan ROC-AUC/PR-AUC keseluruhan
+    -- DAN performa di tiap bucket dukungan (termasuk yang dukungannya tinggi),
+    -- bukan sekadar trade-off - baru diimplementasikan setelah bukti ini,
+    -- bukan diasumsikan seperti klaim dokumentasi sebelumnya.
+    COUNT(*) OVER (
+        PARTITION BY o.item_model_code_clean
+        ORDER BY o.observation_on
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS part_model_cumulative_support
 FROM analytics.item_observation_30d o
 LEFT JOIN analytics.eda_part_terminal_cycle_link p
   USING (installation_cycle_id);

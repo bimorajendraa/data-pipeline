@@ -26,8 +26,8 @@ END $drop_baseline_features$;
 CREATE VIEW analytics.failure_30d_feature_catalog AS
 SELECT * FROM (VALUES
     ('part_model_category', 'item_model_code_clean', 'CATEGORICAL',
-     'KEEP_BASELINE', 'ONE_HOT_RARE_GROUP', 'UNKNOWN_CATEGORY',
-     'Model PART merupakan identitas teknis utama dan risiko berbeda antar-model'),
+     'KEEP_BASELINE', 'ONE_HOT_LOW_SUPPORT_GROUP', 'UNKNOWN_CATEGORY',
+     'Model PART merupakan identitas teknis utama dan risiko berbeda antar-model. Rare-category ablation (2026-08) menguji terkontrol pada TEST_2026: tipe PART dengan dukungan historis point-in-time <300 dikelompokkan LOW_HISTORICAL_SUPPORT (pola sama seperti terminal_type_category) - terbukti menaikkan ROC-AUC keseluruhan (0,7869->0,7927) dan PR-AUC (0,1197->0,1276), serta performa di semua bucket dukungan termasuk yang dukungannya tinggi, bukan cuma bucket yang jarang. Sempat diklaim di dokumentasi sebelum benar-benar diimplementasikan - sudah diperbaiki'),
     ('client_category', 'installed_client_clean', 'CATEGORICAL',
      'KEEP_BASELINE', 'ONE_HOT', 'UNKNOWN_CATEGORY',
      'Empat kategori dengan coverage penuh; konteks operasional yang murah'),
@@ -202,7 +202,11 @@ SELECT
     installation_cycle_id,
     item_identifier_clean,
     observation_on,
-    COALESCE(item_model_code_clean, 'UNKNOWN') AS part_model_category,
+    CASE
+        WHEN item_model_code_clean IS NULL THEN 'UNKNOWN'
+        WHEN part_model_cumulative_support < 300 THEN 'LOW_HISTORICAL_SUPPORT'
+        ELSE item_model_code_clean
+    END AS part_model_category,
     COALESCE(installed_client_clean, 'UNKNOWN') AS client_category,
     LN(1.0 + GREATEST(days_since_installation, 0))
         AS log_days_since_installation,

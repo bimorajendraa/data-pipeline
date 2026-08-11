@@ -20,19 +20,34 @@
 -- terpisah) dan TIDAK dipakai untuk training (tidak masuk item_observation_30d
 -- maupun failure_30d_baseline_features) - hanya dikonsumsi
 -- src/score_current_risk.py. Rumus transformasi di bawah SENGAJA disalin
--- identik dari failure_30d_baseline_features (file 14) - kalau definisi
--- fitur di sana berubah, view ini WAJIB diperbarui juga.
+-- identik dari failure_30d_baseline_features (file 14), termasuk
+-- pengelompokan part_model_category dukungan-rendah (rare-category ablation
+-- 2026-08) - kalau definisi fitur di sana berubah, view ini WAJIB
+-- diperbarui juga.
 DROP VIEW IF EXISTS analytics.item_current_snapshot_features;
 
 CREATE VIEW analytics.item_current_snapshot_features AS
-WITH active_cycle AS (
+WITH part_model_support AS (
+    -- Dukungan historis total per tipe PART hingga saat ini. Karena
+    -- observation_on di bawah selalu dataset_max_event_on (kejadian terbaru),
+    -- dan seluruh baris item_observation_30d sudah <= dataset_max_event_on
+    -- dengan sendirinya, total ini SAMA DENGAN nilai
+    -- part_model_cumulative_support (file 12b) pada titik waktu tersebut -
+    -- tidak perlu window function per baris seperti di file 12b/14.
+    SELECT item_model_code_clean, COUNT(*) AS total_support
+    FROM analytics.item_observation_30d
+    GROUP BY item_model_code_clean
+), active_cycle AS (
     SELECT
         c.installation_cycle_id, c.item_identifier_clean, c.item_model_code_clean,
         c.installed_client_clean, c.installed_on,
         c.dataset_max_event_on AS observation_on,
+        COALESCE(sup.total_support, 0) AS part_model_cumulative_support,
         EXTRACT(EPOCH FROM (c.dataset_max_event_on - c.installed_on)) / 86400.0
             AS days_since_installation
     FROM analytics.item_installation_cycle c
+    LEFT JOIN part_model_support sup
+      ON sup.item_model_code_clean = c.item_model_code_clean
     WHERE c.is_initial_model_cohort
       AND c.cycle_end_reason = 'RIGHT_CENSORED_AT_DATA_END'
 ), features AS (
@@ -65,7 +80,11 @@ SELECT
     installation_cycle_id,
     item_identifier_clean,
     observation_on,
-    COALESCE(item_model_code_clean, 'UNKNOWN') AS part_model_category,
+    CASE
+        WHEN item_model_code_clean IS NULL THEN 'UNKNOWN'
+        WHEN part_model_cumulative_support < 300 THEN 'LOW_HISTORICAL_SUPPORT'
+        ELSE item_model_code_clean
+    END AS part_model_category,
     COALESCE(installed_client_clean, 'UNKNOWN') AS client_category,
     LN(1.0 + GREATEST(days_since_installation, 0)) AS log_days_since_installation,
     CASE
