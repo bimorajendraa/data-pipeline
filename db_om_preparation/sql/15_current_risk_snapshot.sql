@@ -43,6 +43,7 @@ WITH part_model_support AS (
         c.installed_client_clean, c.installed_on,
         c.dataset_max_event_on AS observation_on,
         COALESCE(sup.total_support, 0) AS part_model_cumulative_support,
+        c.previous_cycle_lifetime_mean, c.has_previous_cycle,
         EXTRACT(EPOCH FROM (c.dataset_max_event_on - c.installed_on)) / 86400.0
             AS days_since_installation
     FROM analytics.item_installation_cycle c
@@ -109,6 +110,9 @@ SELECT
     LN(1.0 + GREATEST(COALESCE(prior_corrective_30d, 0), 0)) AS log_prior_corrective_30d,
     LN(1.0 + GREATEST(COALESCE(prior_failure_365d, 0), 0)) AS log_prior_failure_365d,
     LN(1.0 + GREATEST(COALESCE(prior_events_180d, 0), 0)) AS log_prior_events_180d,
+    LN(1.0 + GREATEST(COALESCE(previous_cycle_lifetime_mean, 0), 0))
+        AS log_previous_cycle_lifetime_mean,
+    COALESCE(has_previous_cycle, FALSE) AS has_previous_cycle,
     SIN(2.0 * PI() * (EXTRACT(MONTH FROM observation_on) - 1) / 12.0) AS month_sin,
     COS(2.0 * PI() * (EXTRACT(MONTH FROM observation_on) - 1) / 12.0) AS month_cos
 FROM features;

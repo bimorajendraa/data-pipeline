@@ -67,6 +67,12 @@ SELECT * FROM (VALUES
     ('log_prior_events_180d', 'prior_events_180d', 'COUNT',
      'KEEP_BASELINE', 'LOG1P', 'ZERO_IS_VALID',
      'Window event 180 hari mempunyai IV sedang dan lebih stabil dari window pendek'),
+    ('log_previous_cycle_lifetime_mean', 'previous_cycle_lifetime_mean', 'DURATION',
+     'KEEP_BASELINE', 'LOG1P_PLUS_FLAG', 'ZERO_PLUS_HAS_PREVIOUS_FLAG',
+     'Rata-rata umur siklus SEBELUMNYA (bukan siklus berjalan) untuk item yang sama. Lifecycle ablation (2026-08) menguji terkontrol: menaikkan ROC-AUC/PR-AUC keseluruhan tipis, dan lebih jelas pada subset PART yang pernah dipasang ulang (ROC-AUC 0,7153->0,7272, PR-AUC 0,1811->0,1971 di TEST_2026), tanpa tanda overfitting'),
+    ('has_previous_cycle', 'previous_cycle_lifetime_mean', 'BINARY',
+     'KEEP_BASELINE', 'GREATER_THAN_ZERO', 'FALSE_IS_VALID',
+     'Pendamping missing struktural untuk previous_cycle_lifetime_mean - membedakan PART yang belum pernah dipasang ulang dari yang riwayatnya nol/pendek'),
     ('month_sin', 'observation_month', 'CALENDAR',
      'KEEP_BASELINE', 'CYCLIC_SIN', 'NOT_NULL',
      'Musiman tanpa menganggap Desember jauh dari Januari'),
@@ -152,6 +158,9 @@ SELECT * FROM (VALUES
     ('prior_repair_process_count', 'prior_repair_process_count', 'COUNT',
      'DROP_WEAK_DRIFT', 'NONE', 'ZERO_IS_VALID',
      'IV nol dan definisi proses berubah sejak 2025'),
+    ('mean_previous_failure_interval', 'failure_onset_on (antar-siklus)', 'DURATION',
+     'DROP_WEAK', 'NONE', 'NOT_APPLICABLE',
+     'Diuji lewat lifecycle ablation (2026-08) berdampingan dengan previous_cycle_lifetime_mean: feature importance mendekati nol karena hanya terisi untuk item dengan >=2 kegagalan sebelumnya (1.702 dari 24.045 cycle) - terlalu jarang untuk bernilai, tidak diimplementasikan sebagai kolom'),
     ('observation_quarter', 'observation_quarter', 'CALENDAR',
      'DROP_REDUNDANT', 'NONE', 'NOT_NULL',
      'Redundan dengan representasi siklik bulan'),
@@ -233,6 +242,9 @@ SELECT
     LN(1.0 + GREATEST(prior_failure_365d, 0))
         AS log_prior_failure_365d,
     LN(1.0 + GREATEST(prior_events_180d, 0)) AS log_prior_events_180d,
+    LN(1.0 + GREATEST(COALESCE(previous_cycle_lifetime_mean, 0), 0))
+        AS log_previous_cycle_lifetime_mean,
+    COALESCE(has_previous_cycle, FALSE) AS has_previous_cycle,
     SIN(2.0 * PI() * (observation_month - 1) / 12.0) AS month_sin,
     COS(2.0 * PI() * (observation_month - 1) / 12.0) AS month_cos
 FROM analytics.eda_item_observation_30d_hierarchy;
@@ -321,6 +333,8 @@ UNION ALL SELECT 'null_engineered_numeric',
         OR log_prior_corrective_30d IS NULL
         OR log_prior_failure_365d IS NULL
         OR log_prior_events_180d IS NULL
+        OR log_previous_cycle_lifetime_mean IS NULL
+        OR has_previous_cycle IS NULL
         OR month_sin IS NULL OR month_cos IS NULL)::numeric,
     'Harus nol' FROM baseline;
 

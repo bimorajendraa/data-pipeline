@@ -26,7 +26,8 @@ NUMERIC_FEATURES = [
     "log_days_since_installation", "log_total_prior_events", "log_prior_failure_count",
     "has_prior_failure", "log_prior_corrective_count", "has_prior_corrective",
     "log_days_since_last_corrective", "log_prior_distinct_places", "log_prior_corrective_30d",
-    "log_prior_failure_365d", "log_prior_events_180d", "month_sin", "month_cos",
+    "log_prior_failure_365d", "log_prior_events_180d", "log_previous_cycle_lifetime_mean",
+    "has_previous_cycle", "month_sin", "month_cos",
 ]
 FEATURE_COLUMNS = CATEGORICAL_FEATURES + NUMERIC_FEATURES
 BEST_PARAMS = {"depth": 4, "learning_rate": 0.03, "l2_leaf_reg": 10}
@@ -131,7 +132,8 @@ def main() -> int:
         "distinct_scores_on_test": int(pd.Series(proba_test).nunique()),
         "metrics": metrics,
         "notes": (
-            "Baseline resmi (kelompok fitur C, 16 fitur). Fitur lokasi/TERMINAL "
+            f"Baseline resmi (kelompok fitur C + rare-category grouping + "
+            f"lifecycle, {len(FEATURE_COLUMNS)} fitur). Fitur lokasi/TERMINAL "
             "belum dipakai karena belum terbukti cukup bernilai (lihat "
             "notebooks/03_ablation_study.ipynb). Selisih ROC-AUC "
             "validasi-test kecil (lihat notebooks/05_final_baseline_tuned.ipynb), "

@@ -99,7 +99,7 @@ WITH dataset_boundary AS (
     FROM cycle_events c
     LEFT JOIN analytics.item_identifier_model_cache pi ON pi.lookup_type = 'PAIRING' AND pi.identifier_clean = c.item_pairing_code_clean
     LEFT JOIN analytics.item_identifier_model_cache hi ON hi.lookup_type = 'HOST' AND hi.identifier_clean = c.host_serial_code_clean
-)
+), cycle_base AS (
 SELECT item_identifier_clean || ':' || installation_sequence::text AS installation_cycle_id,
     item_identifier_clean, installation_sequence, journey_id AS installed_journey_id,
     created_on AS installed_on, item_model_code_clean, item_type_clean,
@@ -175,7 +175,25 @@ SELECT item_identifier_clean || ':' || installation_sequence::text AS installati
     EXTRACT(EPOCH FROM (dataset_max_event_on - item_last_seen_on)) / 86400.0
         AS days_item_unseen_at_dataset_end,
     EXTRACT(EPOCH FROM (failure_onset_on - created_on)) / 86400.0 AS days_installed_to_failure
-FROM validated;
+FROM validated
+)
+SELECT cycle_base.*,
+    -- Rata-rata umur siklus-siklus SEBELUMNYA (bukan siklus ini sendiri) untuk
+    -- item yang sama - hanya terisi untuk PART yang sudah pernah dipasang
+    -- ulang. Diuji terkontrol lewat ablation (2026-08): terbukti membantu,
+    -- terutama pada subset PART yang punya riwayat pemasangan ulang (ROC-AUC
+    -- 0,7153->0,7272, PR-AUC 0,1811->0,1971 di TEST_2026), sementara jarak
+    -- waktu antar-kegagalan (interval antar-failure) diuji juga tapi TIDAK
+    -- dipakai karena datanya terlalu jarang (importance mendekati nol).
+    AVG(EXTRACT(EPOCH FROM (cycle_end_on - installed_on)) / 86400.0) OVER (
+        PARTITION BY item_identifier_clean ORDER BY installation_sequence
+        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ) AS previous_cycle_lifetime_mean,
+    COUNT(*) OVER (
+        PARTITION BY item_identifier_clean ORDER BY installation_sequence
+        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ) > 0 AS has_previous_cycle
+FROM cycle_base;
 
 CREATE UNIQUE INDEX item_installation_cycle_id_idx ON analytics.item_installation_cycle (installation_cycle_id);
 CREATE INDEX item_installation_cycle_item_date_idx ON analytics.item_installation_cycle (item_identifier_clean, installed_on);

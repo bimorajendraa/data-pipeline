@@ -69,8 +69,8 @@ def main() -> int:
         quality_by_metric.get("duplicate_feature_keys") == 0,
         quality_by_metric.get("null_core_categories") == 0,
         quality_by_metric.get("null_engineered_numeric") == 0,
-        column_by_view.get("failure_30d_baseline_features") == (16, 0),
-        column_by_view.get("failure_30d_challenger_features") == (26, 0),
+        column_by_view.get("failure_30d_baseline_features") == (18, 0),
+        column_by_view.get("failure_30d_challenger_features") == (28, 0),
     ]
     if not all(checks):
         raise RuntimeError("Kontrak feature engineering tidak terpenuhi")

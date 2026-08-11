@@ -1,5 +1,5 @@
 {
-  "trained_at_utc": "2026-08-11T05:59:18.695148+00:00",
+  "trained_at_utc": "2026-08-11T06:47:40.673936+00:00",
   "feature_columns": [
     "part_model_category",
     "client_category",
@@ -15,6 +15,8 @@
     "log_prior_corrective_30d",
     "log_prior_failure_365d",
     "log_prior_events_180d",
+    "log_previous_cycle_lifetime_mean",
+    "has_previous_cycle",
     "month_sin",
     "month_cos"
   ],
@@ -31,28 +33,28 @@
   "eligibility_rule": "is_recon_verified_training_eligible",
   "source_view": "analytics.failure_30d_baseline_features",
   "tree_count": 200,
-  "distinct_scores_on_test": 7486,
+  "distinct_scores_on_test": 7887,
   "metrics": {
     "train": {
       "rows": 251568,
       "positives": 3852,
-      "roc_auc": 0.8469119111035386,
-      "pr_auc": 0.12013510078854876
+      "roc_auc": 0.847427943854976,
+      "pr_auc": 0.11967675744370385
     },
     "validation": {
       "rows": 49660,
       "positives": 947,
-      "roc_auc": 0.7513907883320038,
-      "pr_auc": 0.10658151955418937
+      "roc_auc": 0.7456546501673238,
+      "pr_auc": 0.1075986462833729
     },
     "test": {
       "rows": 38451,
       "positives": 902,
-      "roc_auc": 0.7996966299585836,
-      "pr_auc": 0.1441300268979249,
-      "brier_raw": 0.13032083823699464,
-      "brier_calibrated": 0.021588444096736263
+      "roc_auc": 0.8003275867352986,
+      "pr_auc": 0.14113632125141642,
+      "brier_raw": 0.12497311686917652,
+      "brier_calibrated": 0.0215338322988913
     }
   },
-  "notes": "Baseline resmi (kelompok fitur C, 16 fitur). Fitur lokasi/TERMINAL belum dipakai karena belum terbukti cukup bernilai (lihat notebooks/03_ablation_study.ipynb). Selisih ROC-AUC validasi-test kecil (lihat notebooks/05_final_baseline_tuned.ipynb), tidak ada tanda overfitting."
+  "notes": "Baseline resmi (kelompok fitur C + rare-category grouping + lifecycle, 18 fitur). Fitur lokasi/TERMINAL belum dipakai karena belum terbukti cukup bernilai (lihat notebooks/03_ablation_study.ipynb). Selisih ROC-AUC validasi-test kecil (lihat notebooks/05_final_baseline_tuned.ipynb), tidak ada tanda overfitting."
 }
