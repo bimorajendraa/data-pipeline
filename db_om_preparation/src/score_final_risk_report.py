@@ -1,15 +1,29 @@
-"""Laporan risiko akhir per PART aktif - menggabungkan Risk 30/90/180 hari
-(hazard chaining, lihat score_multi_horizon_risk.py), kelompok risiko,
-estimasi jendela waktu kegagalan, dan skor keandalan (reliability) jadi
-satu tabel, mengikuti format yang diminta Bagian 28 master prompt.
+"""Laporan risiko akhir per PART aktif - kurva risiko di beberapa titik waktu
+(7/14/30/60/90/120/150/180 hari, hazard chaining - lihat
+score_multi_horizon_risk.py), kelompok risiko, estimasi jendela waktu
+kegagalan, dan skor keandalan (reliability) jadi satu tabel, mengikuti
+format yang diminta Bagian 28 master prompt.
 
-TIDAK melatih model baru - murni menggabungkan output yang sudah
-tervalidasi di fase-fase sebelumnya:
-- Risk 30D/90D/180D: model 30 hari resmi + hazard chaining (Fase 6,
-  terbukti lebih akurat & menjamin monotonicity dibanding classifier
-  90/180 hari terpisah - lihat models/failure_multi_horizon_metadata.json)
+TIDAK melatih model baru - murni menggabungkan/memperluas output yang sudah
+tervalidasi di fase-fase sebelumnya. Eksperimen Random Survival Forest
+(2026-08) sempat dicoba sebagai alternatif TAPI DITOLAK: C-index test-nya
+konsisten lebih rendah (~0,66-0,67) daripada Cox PH yang sudah ada (0,71)
+di semua kombinasi hyperparameter yang dicoba - lihat
+notebooks/06_survival_analysis.ipynb. Karena itu, kurva risiko multi-titik
+di bawah tetap memakai hazard chaining dari model 30 hari resmi (CatBoost),
+BUKAN Cox PH ataupun RSF - hazard chaining sudah terbukti lebih akurat dari
+classifier 90/180 hari terpisah DAN memakai fitur jauh lebih lengkap (18
+fitur point-in-time) dibanding yang bisa dipakai Cox PH/RSF (cuma fitur di
+titik pemasangan awal).
+
+- Risk per titik waktu: model 30 hari resmi + hazard chaining (Fase 6).
+  Titik 7/14 hari diinterpolasi dari hazard 30-harian pertama dengan
+  asumsi laju kegagalan konstan dalam window itu (pendekatan standar utk
+  granularitas sub-window pada discrete-time hazard model) - titik
+  30/60/.../180 hari adalah hasil chaining langsung, bukan interpolasi.
 - Kelompok risiko (Tinggi/Sedang/Rendah): ambang batas yang sama dan sudah
-  diuji di score_current_risk.py (>=3x dan >=1x base rate validasi)
+  diuji di score_current_risk.py (>=3x dan >=1x base rate validasi),
+  berbasis risiko 30 hari.
 - Estimasi jendela waktu kegagalan: dari kurva hazard yang sama, HANYA
   dilaporkan untuk PART kelompok Tinggi/Sedang - untuk kelompok Rendah,
   risiko 180 harinya sendiri terlalu kecil untuk jendela waktu yang
@@ -17,12 +31,14 @@ tervalidasi di fase-fase sebelumnya:
   alih-alih memaksakan angka presisi palsu (sesuai larangan eksplisit
   Bagian 15 master prompt)
 - Reliability: berdasarkan dukungan historis tipe PART (part_model_category)
-  - HIGH/MEDIUM/LOW/UNKNOWN, ambang sama dengan yang dipakai rare-category
+  - Tinggi/Sedang/Rendah, ambang sama dengan yang dipakai rare-category
   ablation (Fase 3): >=5000 baris riwayat = Tinggi, 300-4999 = Sedang,
   <300 atau tidak dikenal = Rendah. Ini bukan skor kepercayaan model
   formal (mis. interval prediksi) - hanya proxy "seberapa banyak riwayat
   yang mendukung prediksi tipe PART ini", supaya pengguna tahu prediksi
   mana yang didukung banyak data historis vs sedikit.
+- Prioritas kerja: kolom `peringkat`, diurutkan kelompok risiko dulu lalu
+  risiko 180 hari - sudah mencakup horizon pendek dan panjang sekaligus.
 """
 
 from __future__ import annotations
@@ -42,9 +58,22 @@ CALIBRATOR_PATH = MODEL_DIR / "failure_30d_baseline_calibrator.joblib"
 METADATA_PATH = MODEL_DIR / "failure_30d_baseline_metadata.json"
 OUTPUT_PATH = PROJECT_DIR / "reports" / "final_risk_report.csv"
 
-HORIZON_STEPS = {"30d": 1, "90d": 3, "180d": 6}
-N_STEPS = max(HORIZON_STEPS.values())
+CHECKPOINT_DAYS = [7, 14, 30, 60, 90, 120, 150, 180]
+N_STEPS = 6  # 6 x 30 hari = 180 hari, mencakup seluruh CHECKPOINT_DAYS
 BIN_LABELS = ["1-30", "31-60", "61-90", "91-120", "121-150", "151-180"]
+
+
+def cumulative_failure_at(hazard_steps: np.ndarray, day: int) -> float:
+    """P(gagal dalam `day` hari) dari kurva hazard 30-harian. Untuk day yang
+    bukan kelipatan 30 (mis. 7, 14), langkah TERAKHIR yang belum penuh
+    diinterpolasi dengan asumsi laju kegagalan konstan dalam window
+    30-harian itu - standar untuk granularitas sub-window pada
+    discrete-time hazard model, bukan hasil chaining langsung."""
+    full_steps, remainder = divmod(day, 30)
+    survival = np.prod(1 - hazard_steps[:full_steps]) if full_steps > 0 else 1.0
+    if remainder > 0 and full_steps < len(hazard_steps):
+        survival *= (1 - hazard_steps[full_steps]) ** (remainder / 30.0)
+    return 1 - survival
 
 AGE_BAND_BINS = [-1, 90, 180, 365, 730, 1460, np.inf]
 AGE_BAND_LABELS = [
@@ -134,26 +163,29 @@ def main() -> int:
     active["_raw_days_since_installation"] = np.expm1(active["log_days_since_installation"])
     active["_eff_days_since_last_corrective"] = np.expm1(active["log_days_since_last_corrective"])
 
-    survival = pd.Series(1.0, index=active.index)
     hazard_matrix = np.zeros((len(active), N_STEPS))
-    checkpoint_proba: dict[str, pd.Series] = {}
     for k in range(N_STEPS):
         proj = project_step(active, k)
         proj[categorical_features] = proj[categorical_features].astype(str)
         raw = model.predict_proba(proj[feature_columns])[:, 1]
-        hazard_k = calibrator.predict(raw)
-        hazard_matrix[:, k] = hazard_k
-        survival = survival * (1 - hazard_k)
-        for horizon, steps in HORIZON_STEPS.items():
-            if k == steps - 1:
-                checkpoint_proba[horizon] = 1 - survival.copy()
+        hazard_matrix[:, k] = calibrator.predict(raw)
+
+    checkpoint_proba: dict[int, np.ndarray] = {
+        day: np.array([cumulative_failure_at(hazard_matrix[i], day) for i in range(len(active))])
+        for day in CHECKPOINT_DAYS
+    }
+    # Jaring pengaman: kurva HARUS naik monoton (dijamin konstruksi
+    # matematisnya - perkalian survival tidak pernah turun makin lama waktu
+    # berjalan), bukan sekadar diharapkan.
+    for a, b in zip(CHECKPOINT_DAYS, CHECKPOINT_DAYS[1:]):
+        assert (checkpoint_proba[a] <= checkpoint_proba[b] + 1e-9).all(), f"monotonicity gagal {a} vs {b}"
 
     # Kelompok risiko: ambang sama & sudah teruji di score_current_risk.py,
     # berbasis skor 30 hari (dari model resmi, bukan hasil chaining).
     validation_metrics = metadata["metrics"]["validation"]
     base_rate = validation_metrics["positives"] / validation_metrics["rows"]
     risk_level = pd.cut(
-        checkpoint_proba["30d"],
+        checkpoint_proba[30],
         bins=[-float("inf"), base_rate, 3 * base_rate, float("inf")],
         labels=["Rendah", "Sedang", "Tinggi"],
     ).astype(str)
@@ -161,9 +193,8 @@ def main() -> int:
     result = active[["installation_cycle_id", "item_identifier_clean", "observation_on",
                       "part_model_category", "part_model_code_raw", "client_category"]].copy()
     result["umur_hari"] = active["_raw_days_since_installation"].round(0).astype(int)
-    result["risiko_30_hari"] = checkpoint_proba["30d"]
-    result["risiko_90_hari"] = checkpoint_proba["90d"]
-    result["risiko_180_hari"] = checkpoint_proba["180d"]
+    for day in CHECKPOINT_DAYS:
+        result[f"risiko_{day}_hari"] = checkpoint_proba[day]
     result["kelompok_risiko"] = pd.Categorical(risk_level, categories=["Tinggi", "Sedang", "Rendah"], ordered=True)
     result["jendela_kegagalan"] = [
         failure_window(hazard_matrix[i], risk_level[i]) for i in range(len(active))
@@ -185,9 +216,9 @@ def main() -> int:
     print("\nJumlah PART per kelompok risiko x keandalan prediksi:")
     print(pd.crosstab(result["kelompok_risiko"], result["keandalan_prediksi"]))
     print("\nContoh 10 PART risiko tertinggi:")
-    cols = ["peringkat", "item_identifier_clean", "part_model_code_raw", "umur_hari",
-            "risiko_30_hari", "risiko_90_hari", "risiko_180_hari",
-            "kelompok_risiko", "jendela_kegagalan", "keandalan_prediksi"]
+    cols = (["peringkat", "item_identifier_clean", "part_model_code_raw", "umur_hari"]
+            + [f"risiko_{d}_hari" for d in CHECKPOINT_DAYS]
+            + ["kelompok_risiko", "jendela_kegagalan", "keandalan_prediksi"])
     with pd.option_context("display.max_columns", None, "display.width", 200):
         print(result[cols].head(10).to_string(index=False))
     return 0
