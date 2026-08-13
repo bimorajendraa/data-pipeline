@@ -14,3 +14,4 @@ lifelines>=0.30,<1  # eksperimen survival analysis, terpisah dari model klasifik
 # modul SVM-nya butuh Visual C++ Build Tools yang tidak tersedia di semua mesin;
 # RandomSurvivalForest tidak butuh ecos sama sekali)
 scikit-survival>=0.24,<1
+xgboost>=2.0,<4  # eksperimen XGBoost AFT (survival), sama terpisahnya dari model resmi
