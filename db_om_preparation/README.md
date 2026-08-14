@@ -177,6 +177,18 @@ menunjukkan seberapa baru database itu sendiri (bukan lagi soal snapshot
 yang basi). PART langsung mendapat skor sejak hari pertama dipasang, tidak
 perlu menunggu snapshot 30 hari pertama.
 
+### Test unit
+
+```powershell
+python -m pytest tests\ -v
+```
+
+Menguji fungsi perhitungan murni yang dipakai scoring (`cumulative_failure_at`,
+`project_step`, `reliability_tier`, `failure_window` di `src/score_*.py`) -
+fungsi-fungsi yang tidak butuh database, tapi paling gampang diam-diam salah
+kalau diedit karena tidak ada error yang muncul, cuma angka yang salah. Tidak
+menguji `main()`/`query()` di modul manapun (butuh database sungguhan).
+
 `notebooks/06_survival_analysis.ipynb` adalah eksperimen **terpisah** dan
 **opsional** (analisis waktu-ke-kerusakan/C-index) - tidak dipakai oleh
 `train_final_model.py` maupun `score_current_risk.py`, dan tidak wajib
