@@ -164,11 +164,26 @@ def main() -> int:
     active["_eff_days_since_last_corrective"] = np.expm1(active["log_days_since_last_corrective"])
 
     hazard_matrix = np.zeros((len(active), N_STEPS))
+    hazard_matrix_raw = np.zeros((len(active), N_STEPS))
     for k in range(N_STEPS):
         proj = project_step(active, k)
         proj[categorical_features] = proj[categorical_features].astype(str)
         raw = model.predict_proba(proj[feature_columns])[:, 1]
         hazard_matrix[:, k] = calibrator.predict(raw)
+        hazard_matrix_raw[:, k] = raw
+
+    # Skor mentah (tanpa kalibrasi) HANYA dipakai sebagai pemecah seri urutan,
+    # tidak pernah dilaporkan sebagai probabilitas. Kalibrator isotonic adalah
+    # fungsi tangga: pada data 2026 ia memampatkan 2.190 nilai skor mentah
+    # menjadi hanya 377 nilai terkalibrasi, sehingga ribuan PART berbagi angka
+    # identik (blok terbesar: 27,9% armada bernilai sama persis). Tanpa pemecah
+    # seri, urutan di dalam blok itu mengikuti urutan baris - berubah-ubah antar
+    # hitung ulang padahal datanya sama. score_current_risk.py sudah memakai
+    # pola yang sama (lihat komentar di sana); laporan akhir ini sebelumnya
+    # terlewat. Diukur pada landmark test 2026: pengaruhnya ke akurasi kecil
+    # (PR-AUC 0,1907 -> 0,1941, Top-K nyaris tak berubah) - alasan utamanya
+    # keterulangan hasil, bukan kenaikan akurasi.
+    risk_180_raw = 1 - np.prod(1 - hazard_matrix_raw, axis=1)
 
     checkpoint_proba: dict[int, np.ndarray] = {
         day: np.array([cumulative_failure_at(hazard_matrix[i], day) for i in range(len(active))])
@@ -203,9 +218,11 @@ def main() -> int:
         active["part_model_cumulative_support"], active["part_model_category"]
     )
 
+    result["_skor_mentah_180"] = risk_180_raw
     result = result.sort_values(
-        ["kelompok_risiko", "risiko_180_hari"], ascending=[True, False]
-    ).reset_index(drop=True)
+        ["kelompok_risiko", "risiko_180_hari", "_skor_mentah_180"],
+        ascending=[True, False, False],
+    ).drop(columns="_skor_mentah_180").reset_index(drop=True)
     result.insert(0, "peringkat", result.index + 1)
 
     OUTPUT_PATH.parent.mkdir(exist_ok=True)

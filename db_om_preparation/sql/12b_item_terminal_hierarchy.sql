@@ -115,6 +115,15 @@ CREATE INDEX eda_part_terminal_cycle_link_part_idx
 -- model tidak menghafal pola dari sampel yang terlalu kecil. Dihitung hanya
 -- dari event pada atau sebelum observation_on masing-masing baris (via ORDER
 -- BY di window function) sehingga tidak memakai informasi masa depan.
+--
+-- RANGE, bukan ROWS: observation_on TIDAK unik dalam partition (96% baris
+-- punya "kembar" tanggal yang sama - banyak item/model yang sama diobservasi
+-- di hari kalender yang sama). ROWS BETWEEN ... menghitung peer berdasarkan
+-- urutan scan fisik yang tidak dijamin stabil, sehingga hasilnya bisa berbeda
+-- antar-refresh untuk baris yang sama tanpa data berubah sama sekali
+-- (terbukti: 2.797 baris bisa berpindah kategori part_model_category gara-gara
+-- ini, 2026-08). RANGE menghitung seluruh peer pada observation_on yang sama
+-- sekaligus, deterministik terlepas dari urutan scan.
 CREATE VIEW analytics.eda_item_observation_30d_hierarchy AS
 SELECT o.*,
     p.terminal_serial_version,
@@ -131,12 +140,12 @@ SELECT o.*,
     COUNT(*) OVER (
         PARTITION BY (CASE WHEN p.is_parent_link_valid THEN p.terminal_type END)
         ORDER BY o.observation_on
-        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS terminal_type_cumulative_support,
     COUNT(*) OVER (
         PARTITION BY (CASE WHEN p.is_parent_link_valid THEN p.terminal_model_code END)
         ORDER BY o.observation_on
-        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS terminal_model_cumulative_support,
     -- Dukungan historis kumulatif (point-in-time) per tipe/model PART itu
     -- sendiri. Rare-category ablation (2026-08, lihat catatan pada 14) menguji
@@ -148,7 +157,7 @@ SELECT o.*,
     COUNT(*) OVER (
         PARTITION BY o.item_model_code_clean
         ORDER BY o.observation_on
-        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS part_model_cumulative_support
 FROM analytics.item_observation_30d o
 LEFT JOIN analytics.eda_part_terminal_cycle_link p

@@ -1,5 +1,5 @@
 {
-  "trained_at_utc": "2026-08-11T06:47:40.673936+00:00",
+  "trained_at_utc": "2026-08-13T23:39:34.942543+00:00",
   "feature_columns": [
     "part_model_category",
     "client_category",
@@ -33,27 +33,27 @@
   "eligibility_rule": "is_recon_verified_training_eligible",
   "source_view": "analytics.failure_30d_baseline_features",
   "tree_count": 200,
-  "distinct_scores_on_test": 7887,
+  "distinct_scores_on_test": 8219,
   "metrics": {
     "train": {
       "rows": 251568,
       "positives": 3852,
-      "roc_auc": 0.847427943854976,
-      "pr_auc": 0.11967675744370385
+      "roc_auc": 0.8469608294650959,
+      "pr_auc": 0.11904123744319461
     },
     "validation": {
       "rows": 49660,
       "positives": 947,
-      "roc_auc": 0.7456546501673238,
-      "pr_auc": 0.1075986462833729
+      "roc_auc": 0.7411995535950704,
+      "pr_auc": 0.10797438015658962
     },
     "test": {
       "rows": 38451,
       "positives": 902,
-      "roc_auc": 0.8003275867352986,
-      "pr_auc": 0.14113632125141642,
-      "brier_raw": 0.12497311686917652,
-      "brier_calibrated": 0.0215338322988913
+      "roc_auc": 0.788276282774691,
+      "pr_auc": 0.1431496613117182,
+      "brier_raw": 0.1347214128874661,
+      "brier_calibrated": 0.02156626706161619
     }
   },
   "notes": "Baseline resmi (kelompok fitur C + rare-category grouping + lifecycle, 18 fitur). Fitur lokasi/TERMINAL belum dipakai karena belum terbukti cukup bernilai (lihat notebooks/03_ablation_study.ipynb). Selisih ROC-AUC validasi-test kecil (lihat notebooks/05_final_baseline_tuned.ipynb), tidak ada tanda overfitting."
