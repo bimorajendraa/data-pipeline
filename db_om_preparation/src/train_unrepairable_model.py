@@ -360,8 +360,8 @@ def main() -> int:
         print(f"  Pembanding terdekat {runner_up['model']}: "
               f"PR-AUC {runner_up['rolling_pr']:.3f} vs {ranked.iloc[0]['rolling_pr']:.3f}, "
               f"ROC-AUC {runner_up['rolling_roc']:.3f} vs {ranked.iloc[0]['rolling_roc']:.3f}")
-        print("  Pada 55 kejadian, selisih sekecil ini belum bisa disebut beda nyata -")
-        print("  keduanya sama-sama masuk akal dipakai.")
+        print(f"  Pada {target.sum()} kejadian scrap, selisih sekecil ini belum bisa disebut")
+        print("  beda nyata - keduanya sama-sama masuk akal dipakai.")
 
     pipeline = candidate_models()[best_name]
     threshold = choose_threshold(pipeline, features[~is_test], target[~is_test])

@@ -1,7 +1,7 @@
 {
-  "trained_at_utc": "2026-08-15T16:01:37.436793+00:00",
+  "trained_at_utc": "2026-08-15T16:13:31.766910+00:00",
   "question": "Saat sebuah PART rusak, apakah kerusakan itu berakhir dibuang (UNREPAIRABLE/BROKEN)?",
-  "selected_model": "Regresi Logistik",
+  "selected_model": "Gabungan LogReg + RF",
   "selection_rule": "PR-AUC rata-rata rolling-origin pada 3 titik potong waktu",
   "scrap_status": [
     "UNREPAIRABLE",
@@ -76,25 +76,34 @@
       "rolling_pr": 0.11500881188867668,
       "test_roc_auc": 0.7286345001576789,
       "test_pr_auc": 0.1331170431183698
+    },
+    {
+      "model": "Gabungan LogReg + RF",
+      "cv_acak": 0.681978672985782,
+      "validasi_waktu": 0.616576819407008,
+      "rolling_roc": 0.6784155798159196,
+      "rolling_pr": 0.17176520789323815,
+      "test_roc_auc": 0.7628508356985177,
+      "test_pr_auc": 0.255028788032008
     }
   ],
   "test_metrics": {
-    "threshold": 0.48,
-    "roc_auc": 0.7253232418795332,
-    "pr_auc": 0.23242464111365901,
+    "threshold": 0.52,
+    "roc_auc": 0.7628508356985177,
+    "pr_auc": 0.255028788032008,
     "pr_auc_baseline": 0.06501547987616099,
-    "accuracy": 0.7461300309597523,
-    "balanced_accuracy": 0.6426994638915169,
-    "precision": 0.13253012048192772,
-    "recall": 0.5238095238095238,
+    "accuracy": 0.804953560371517,
+    "balanced_accuracy": 0.6520025228634501,
+    "precision": 0.16129032258064516,
+    "recall": 0.47619047619047616,
     "confusion_matrix": [
       [
-        230,
-        72
+        250,
+        52
       ],
       [
-        10,
-        11
+        11,
+        10
       ]
     ],
     "rows": 323,
