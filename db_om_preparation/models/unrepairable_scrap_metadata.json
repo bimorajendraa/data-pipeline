@@ -1,0 +1,109 @@
+{
+  "trained_at_utc": "2026-08-15T16:01:37.436793+00:00",
+  "question": "Saat sebuah PART rusak, apakah kerusakan itu berakhir dibuang (UNREPAIRABLE/BROKEN)?",
+  "selected_model": "Regresi Logistik",
+  "selection_rule": "PR-AUC rata-rata rolling-origin pada 3 titik potong waktu",
+  "scrap_status": [
+    "UNREPAIRABLE",
+    "BROKEN"
+  ],
+  "era_start": "2025-04-01",
+  "embargo_days": 30,
+  "label_rule": {
+    "scrap": "vonis bengkel UNREPAIRABLE atau BROKEN",
+    "survived": "vonis bengkel REPAIRED, atau PART terbukti dipasang kembali",
+    "excluded": "tanpa vonis dan tidak pernah dipasang lagi, atau masuk masa embargo"
+  },
+  "test_start": "2026-04-01",
+  "feature_columns": [
+    "item_type_category",
+    "log_age_total",
+    "log_cycle_age",
+    "log_prior_repaired_count",
+    "has_prior_repair",
+    "log_prior_failure_count",
+    "is_first_failure_ever"
+  ],
+  "categorical_features": [
+    "item_type_category"
+  ],
+  "rows": {
+    "total": 1407,
+    "scrap": 46
+  },
+  "model_comparison": [
+    {
+      "model": "Selalu 'bisa diperbaiki'",
+      "cv_acak": 0.5,
+      "validasi_waktu": 0.5,
+      "rolling_roc": 0.5,
+      "rolling_pr": 0.04879384254050636,
+      "test_roc_auc": 0.5,
+      "test_pr_auc": 0.06501547987616099
+    },
+    {
+      "model": "Regresi Logistik",
+      "cv_acak": 0.6898050612536888,
+      "validasi_waktu": 0.6159029649595688,
+      "rolling_roc": 0.6500570538644294,
+      "rolling_pr": 0.1524129010322537,
+      "test_roc_auc": 0.7253232418795332,
+      "test_pr_auc": 0.23242464111365901
+    },
+    {
+      "model": "Random Forest",
+      "cv_acak": 0.6276979567200215,
+      "validasi_waktu": 0.5714285714285714,
+      "rolling_roc": 0.6740142285218754,
+      "rolling_pr": 0.12781064212478824,
+      "test_roc_auc": 0.793046357615894,
+      "test_pr_auc": 0.20826316092882513
+    },
+    {
+      "model": "Extra Trees",
+      "cv_acak": 0.648146628811589,
+      "validasi_waktu": 0.6570080862533693,
+      "rolling_roc": 0.5986381814828201,
+      "rolling_pr": 0.13979846475402743,
+      "test_roc_auc": 0.662251655629139,
+      "test_pr_auc": 0.22408532106493825
+    },
+    {
+      "model": "Gradient Boosting",
+      "cv_acak": 0.6674418760618797,
+      "validasi_waktu": 0.6878369272237197,
+      "rolling_roc": 0.7025789292856016,
+      "rolling_pr": 0.11500881188867668,
+      "test_roc_auc": 0.7286345001576789,
+      "test_pr_auc": 0.1331170431183698
+    }
+  ],
+  "test_metrics": {
+    "threshold": 0.48,
+    "roc_auc": 0.7253232418795332,
+    "pr_auc": 0.23242464111365901,
+    "pr_auc_baseline": 0.06501547987616099,
+    "accuracy": 0.7461300309597523,
+    "balanced_accuracy": 0.6426994638915169,
+    "precision": 0.13253012048192772,
+    "recall": 0.5238095238095238,
+    "confusion_matrix": [
+      [
+        230,
+        72
+      ],
+      [
+        10,
+        11
+      ]
+    ],
+    "rows": 323,
+    "positives": 21
+  },
+  "limitations": [
+    "Status UNREPAIRABLE baru ada sejak 2025-04-23; populasi dibatasi mulai 2025-04-01.",
+    "Kejadian scrap masih sedikit - metrik uji berisik.",
+    "Base rate masih naik perlahan antar-kuartal; peringkat risiko lebih bisa dipercaya daripada probabilitas absolut.",
+    "Episode tanpa vonis DAN tidak pernah dipasang lagi tetap tidak bisa dilabeli, jadi dikeluarkan."
+  ]
+}
