@@ -101,6 +101,61 @@ def _valid_operational_date(created_on: str) -> str:
     )"""
 
 
+def _inventory_lookup_cte() -> str:
+    """Identitas PART menurut inventory, dipakai memastikan model PART konsisten.
+
+    Dipakai bersama oleh pembacaan siklus dan pembacaan episode kerusakan -
+    ditulis sekali di sini supaya keduanya tidak mungkin memakai aturan
+    identitas yang berbeda.
+    """
+    return f"""inventory_identifier AS MATERIALIZED (
+    SELECT DISTINCT
+        {_clean('i.item_pairing_code')} AS item_pairing_code_clean,
+        {_clean('i.sn_ref')} AS sn_ref_clean,
+        CASE WHEN {_clean('i.item_model_code')} IS NOT NULL
+              AND {_clean('i.item_pairing_code')} IS NOT NULL
+              AND {_clean('i.repair_seq')} IS NOT NULL
+             THEN {_clean("i.item_model_code || '-' || i.item_pairing_code || '-' || i.repair_seq")}
+        END AS host_serial_code_clean,
+        {_clean('i.item_model_code')} AS item_model_code_clean
+    FROM inventory.t_item i
+),
+
+inventory_lookup AS MATERIALIZED (
+    SELECT lookup_type, identifier_clean,
+        COUNT(DISTINCT item_model_code_clean) AS nonnull_model_count,
+        BOOL_OR(item_model_code_clean IS NULL) AS has_null_model,
+        MIN(item_model_code_clean) AS only_model_code
+    FROM (
+        SELECT 'PAIRING'::text AS lookup_type,
+            item_pairing_code_clean AS identifier_clean, item_model_code_clean
+        FROM inventory_identifier WHERE item_pairing_code_clean IS NOT NULL
+        UNION ALL
+        SELECT 'HOST', host_serial_code_clean, item_model_code_clean
+        FROM inventory_identifier WHERE host_serial_code_clean IS NOT NULL
+        UNION ALL
+        SELECT 'HOST', sn_ref_clean, item_model_code_clean
+        FROM inventory_identifier WHERE sn_ref_clean IS NOT NULL
+    ) v
+    GROUP BY lookup_type, identifier_clean
+)"""
+
+
+def _matches_inventory(pairing: str, host: str, model_column: str) -> str:
+    """PART dikenali inventory DAN model teknisnya tidak bertentangan."""
+    return f"""(
+        ({pairing}.identifier_clean IS NOT NULL OR {host}.identifier_clean IS NOT NULL)
+        AND CASE WHEN {pairing}.identifier_clean IS NULL THEN TRUE
+                 WHEN {model_column} IS NULL THEN {pairing}.nonnull_model_count = 0
+                 ELSE NOT {pairing}.has_null_model AND {pairing}.nonnull_model_count = 1
+                      AND {pairing}.only_model_code = {model_column} END
+        AND CASE WHEN {host}.identifier_clean IS NULL THEN TRUE
+                 WHEN {model_column} IS NULL THEN {host}.nonnull_model_count = 0
+                 ELSE NOT {host}.has_null_model AND {host}.nonnull_model_count = 1
+                      AND {host}.only_model_code = {model_column} END
+    )"""
+
+
 def _work_order_type_cte() -> str:
     """Jenis pekerjaan dari work order, dipakai mendeteksi konteks RECON."""
     return f"""work_order_type AS MATERIALIZED (
@@ -328,6 +383,7 @@ event AS MATERIALIZED (
     SELECT
         j.journey_id,
         {_clean('j.item_category')} AS item_category_clean,
+        {_clean('j.item_type')} AS item_type_clean,
         {_clean('j.item_model_code')} AS item_model_code_clean,
         {_clean('j.item_pairing_code')} AS item_pairing_code_clean,
         {_clean('j.host_serial_code')} AS host_serial_code_clean,
@@ -454,8 +510,8 @@ def get_events(item_id: str | None = None) -> pd.DataFrame:
         sql = (
             _chain_sql(client_map, place_map, single_item=item_id is not None)
             + """
-SELECT item_identifier_clean, created_on, wo_type_clean,
-       is_failure_onset, place_canonical_clean
+SELECT journey_id, item_identifier_clean, created_on, wo_type_clean, status_clean,
+       item_type_clean, is_failure_onset, place_canonical_clean
 FROM operational
 WHERE item_identifier_clean IS NOT NULL
 ORDER BY item_identifier_clean, created_on, journey_id
@@ -506,38 +562,7 @@ recon_after AS (
     GROUP BY b.item_identifier_clean
 ),
 
--- Identitas PART di inventory, untuk memastikan model PART konsisten.
-inventory_identifier AS (
-    SELECT DISTINCT
-        {_clean('i.item_pairing_code')} AS item_pairing_code_clean,
-        {_clean('i.sn_ref')} AS sn_ref_clean,
-        CASE WHEN {_clean('i.item_model_code')} IS NOT NULL
-              AND {_clean('i.item_pairing_code')} IS NOT NULL
-              AND {_clean('i.repair_seq')} IS NOT NULL
-             THEN {_clean("i.item_model_code || '-' || i.item_pairing_code || '-' || i.repair_seq")}
-        END AS host_serial_code_clean,
-        {_clean('i.item_model_code')} AS item_model_code_clean
-    FROM inventory.t_item i
-),
-
-inventory_lookup AS MATERIALIZED (
-    SELECT lookup_type, identifier_clean,
-        COUNT(DISTINCT item_model_code_clean) AS nonnull_model_count,
-        BOOL_OR(item_model_code_clean IS NULL) AS has_null_model,
-        MIN(item_model_code_clean) AS only_model_code
-    FROM (
-        SELECT 'PAIRING'::text AS lookup_type,
-            item_pairing_code_clean AS identifier_clean, item_model_code_clean
-        FROM inventory_identifier WHERE item_pairing_code_clean IS NOT NULL
-        UNION ALL
-        SELECT 'HOST', host_serial_code_clean, item_model_code_clean
-        FROM inventory_identifier WHERE host_serial_code_clean IS NOT NULL
-        UNION ALL
-        SELECT 'HOST', sn_ref_clean, item_model_code_clean
-        FROM inventory_identifier WHERE sn_ref_clean IS NOT NULL
-    ) v
-    GROUP BY lookup_type, identifier_clean
-),
+{_inventory_lookup_cte()},
 
 -- Siklus hanya dibuka oleh pemasangan (INSTALLED) PART.
 installed_event AS MATERIALIZED (
@@ -607,15 +632,7 @@ cycle_base AS (
             )
         ) AS is_recon_verified_negative_eligible,
         (
-            (pl.identifier_clean IS NOT NULL OR hl.identifier_clean IS NOT NULL)
-            AND CASE WHEN pl.identifier_clean IS NULL THEN TRUE
-                     WHEN i.item_model_code_clean IS NULL THEN pl.nonnull_model_count = 0
-                     ELSE NOT pl.has_null_model AND pl.nonnull_model_count = 1
-                          AND pl.only_model_code = i.item_model_code_clean END
-            AND CASE WHEN hl.identifier_clean IS NULL THEN TRUE
-                     WHEN i.item_model_code_clean IS NULL THEN hl.nonnull_model_count = 0
-                     ELSE NOT hl.has_null_model AND hl.nonnull_model_count = 1
-                          AND hl.only_model_code = i.item_model_code_clean END
+            {_matches_inventory("pl", "hl", "i.item_model_code_clean")}
             AND i.created_on < COALESCE(
                 f.failure_onset_on, i.next_installed_on, b.dataset_max_event_on
             )
@@ -656,6 +673,42 @@ ORDER BY c.item_identifier_clean, c.installation_sequence
             # Urutan mengikuti kemunculan placeholder: filter item di CTE
             # `event`, lalu batas tanggal data di `dataset_boundary`.
             params = (_normalize(item_id), pd.Timestamp(dataset_max_event_on).to_pydatetime())
+        return _query(conn, sql, params)
+
+
+def get_failure_episodes(item_id: str | None = None) -> pd.DataFrame:
+    """Setiap kejadian kerusakan PART, sebagai bahan model risiko scrap.
+
+    Satu baris = satu kerusakan. Berbeda dari get_cycles(): sebuah siklus
+    pemasangan hanya mencatat kerusakan PERTAMA yang mengakhirinya, sedangkan
+    di sini semua kerusakan ikut - termasuk yang terjadi sebelum pemasangan
+    pertama tercatat, yang jumlahnya tidak sedikit.
+    """
+    with connect() as conn:
+        client_map, place_map = _build_text_maps(conn)
+        sql = (
+            _chain_sql(client_map, place_map, single_item=item_id is not None)
+            + f"""
+, {_inventory_lookup_cte()}
+
+SELECT
+    f.journey_id AS onset_journey_id,
+    f.item_identifier_clean,
+    f.failure_onset_on,
+    e.item_type_clean,
+    {_matches_inventory("pl", "hl", "e.item_model_code_clean")}
+        AND e.item_category_clean = 'PART'
+        AS is_initial_model_cohort
+FROM failure_event f
+JOIN event e ON e.journey_id = f.journey_id
+LEFT JOIN inventory_lookup pl
+    ON pl.lookup_type = 'PAIRING' AND pl.identifier_clean = e.item_pairing_code_clean
+LEFT JOIN inventory_lookup hl
+    ON hl.lookup_type = 'HOST' AND hl.identifier_clean = e.host_serial_code_clean
+ORDER BY f.item_identifier_clean, f.failure_onset_on, f.journey_id
+"""
+        )
+        params = () if item_id is None else (_normalize(item_id),)
         return _query(conn, sql, params)
 
 

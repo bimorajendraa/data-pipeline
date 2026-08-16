@@ -1,6 +1,6 @@
 # production_ml
 
-Versi minimal dan siap pakai dari pipeline prediksi kerusakan PART: **training,
+Versi minimal dan siap pakai dari pipeline prediksi PART: **training,
 retraining, dan prediction**. Tidak ada notebook, EDA, profiling, visualisasi,
 ablation study, atau eksperimen di sini - semua itu tetap di
 `db_om_preparation/` sebagai referensi research.
@@ -8,6 +8,38 @@ ablation study, atau eksperimen di sini - semua itu tetap di
 Database **hanya dibaca**. Folder ini tidak pernah membuat, mengubah, atau
 menghapus object apa pun di database, dan tidak bergantung pada schema
 `analytics` hasil research.
+
+## Dua model, dua pertanyaan berbeda
+
+```
+PART terpasang normal
+        |
+        v
+  MODEL KERUSAKAN   "Kapan PART ini akan rusak?"        -> predict()
+        |            probabilitas rusak 30/60/90/120 hari
+        v
+   PART RUSAK (dibongkar, masuk bengkel)
+        |
+        v
+  MODEL SCRAP       "Kerusakan ini berakhir dibuang?"   -> predict_scrap()
+        |            probabilitas tidak bisa diperbaiki
+        v
+   Dibuang  /  Diperbaiki & dipasang lagi
+```
+
+| | Model kerusakan | Model scrap |
+|---|---|---|
+| Pertanyaan | Kapan rusak | Kalau rusak, apakah dibuang |
+| Latih | `train.py` | `train_scrap.py` |
+| Prediksi | `predict()` | `predict_scrap()` |
+| 1 baris data | 1 PART pada 1 titik waktu | 1 kejadian kerusakan |
+| Data latih | 356.100 baris, 5.876 kerusakan | 1.407 kerusakan, 46 dibuang |
+| Fitur | 18 | 7 |
+| ROC-AUC uji | 0,795 | 0,762 |
+
+Keduanya berdiri sendiri dan tidak saling menggantikan. Rantai pembacaan
+database dipakai bersama, jadi definisi "kerusakan", "siklus pemasangan", dan
+pembersihan datanya dijamin sama untuk keduanya.
 
 ---
 
@@ -61,21 +93,53 @@ Kalau PART tidak dikenal atau sedang tidak terpasang, `predict()` melempar
 
 ---
 
+### Prediksi risiko dibuang (scrap)
+
+```python
+from predict_scrap import predict_scrap, predict_death_risk
+
+predict_scrap("011201100101164")
+```
+
+```python
+{
+    "item_id": "011201100101164",
+    "scrap_score": 0.4816,          # SKOR PEMERINGKAT, bukan persentase
+    "scrap_risk_level": "LOW",
+    "scrap_risk_basis": "dibandingkan kerusakan lain yang masuk bengkel",
+    "item_type": "MOTOR",
+    "item_type_known_to_model": True,
+    "model_version": "v1",
+    "as_of": "2026-08-03 11:07:22",
+}
+```
+
+Latih ulang dengan `python train_scrap.py`.
+
+`predict_death_risk(item_id)` menggabungkan keduanya menjadi risiko PART
+benar-benar mati dalam 30 hari - baca peringatannya di bagian "Model scrap".
+
+---
+
 ## Struktur
 
 ```
 production_ml/
-├── config.py           # semua konstanta: fitur, hyperparameter, ambang batas
-├── data_reader.py      # SELECT read-only: event bersih + siklus pemasangan
-├── feature_builder.py  # observasi, riwayat point-in-time, 18 fitur model
-├── train.py            # training + retraining + versioning
+├── config.py           # semua konstanta kedua model
+├── data_reader.py      # SELECT read-only: event, siklus, kerusakan
+├── feature_builder.py  # observasi + riwayat + 18 fitur model kerusakan
+├── scrap_features.py   # label nasib kerusakan + 7 fitur model scrap
+├── train.py            # latih model kerusakan
+├── train_scrap.py      # latih model scrap
 ├── predict.py          # predict(item_id)
+├── predict_scrap.py    # predict_scrap(item_id), predict_death_risk(item_id)
 ├── models/
-│   ├── CURRENT         # berisi nama versi yang dipakai production
-│   └── v1/
-│       ├── model.cbm
-│       ├── calibrator.joblib
-│       └── metadata.json
+│   ├── failure/        # model KERUSAKAN
+│   │   ├── CURRENT     # versi yang dipakai production
+│   │   └── v1/         # model.cbm, calibrator.joblib, metadata.json
+│   └── scrap/          # model SCRAP
+│       ├── CURRENT
+│       └── v1/         # model.joblib, metadata.json
 ├── requirements.txt
 └── README.md
 ```
@@ -155,13 +219,207 @@ asumsi tersebut.
 Dibandingkan terhadap base rate validasi (frekuensi kerusakan historis
 sungguhan), bukan ambang karangan:
 
-| Kelompok | Arti |
-|---|---|
-| `HIGH` | >= 3x base rate |
-| `MEDIUM` | >= 1x base rate |
-| `LOW` | di bawah base rate |
+Satu angka yang mengatur semuanya, di `config.py`:
+
+```python
+FAILURE_CAPACITY_PER_MONTH = 200   # berapa PART/bulan yang sanggup diprioritaskan
+```
+
+Seluruh PART aktif diurutkan menurut risiko, lalu sebanyak kapasitas itulah
+yang masuk `HIGH`. Karena tiap PART dinilai ulang tiap 30 hari, jumlah PART di
+daftar `HIGH` pada satu saat sama dengan beban kerja per bulan. Hasilnya pada
+16.877 PART aktif: **200 HIGH, 200 MEDIUM, 16.477 LOW** - tepat sesuai
+kapasitas.
+
+Pilihan lain, diukur di data uji 2026:
+
+| Kapasitas/bln | Presisi | Tertangkap | Berapa kali lebih tepat |
+|---|---|---|---|
+| 50 | 29,4% | 145 dari 902 | 12,5x |
+| 100 | 20,3% | 267 dari 902 | 8,6x |
+| **200** (dipakai) | **16,6%** | **329 dari 902** | **7,1x** |
+| 400 | 7,4% | 496 dari 902 | 3,2x |
+| 800 | 7,4% | 633 dari 902 | 3,2x |
+
+200/bulan dipilih karena **setara dengan aturan lama yang sudah tervalidasi di
+research** (>=3x base rate validasi: presisi 16,6%, recall 36,6%). Jadi
+perilakunya tidak berubah - yang berubah cara menyetelnya, dari kelipatan
+statistik menjadi angka kapasitas yang bisa dibicarakan dengan tim operasional.
+
+### Kenapa batas kelompok memakai skor mentah
+
+Batas `HIGH`/`MEDIUM` dibandingkan terhadap **skor mentah model**, bukan
+probabilitas terkalibrasi yang ditampilkan ke pengguna. Alasannya teknis:
+kalibrator menghasilkan dataran, sehingga 16.877 PART hanya menempati sekitar
+30 nilai probabilitas berbeda - jumlah PART yang tertandai melompat dari 97
+langsung ke 303, tidak ada nilai di antaranya. Skor mentah punya ribuan nilai
+berbeda dengan **urutan yang sama persis**, jadi batas bisa ditaruh tepat
+sesuai kapasitas. Probabilitas terkalibrasi tetap yang dilaporkan, karena itu
+angka yang bermakna untuk dibaca.
 
 ---
+
+## Model scrap
+
+| | |
+|---|---|
+| Algoritma | Rata-rata Regresi Logistik + Random Forest (soft voting) |
+| Target | Vonis `UNREPAIRABLE` atau `BROKEN` setelah kerusakan |
+| Fitur | 7 |
+| Periode | Mulai 2025-04-01, dengan embargo 30 hari di ujung data |
+| Pemilihan model | PR-AUC rolling-origin pada 3 titik potong waktu |
+| Ambang risiko | Dari kapasitas kerja bisnis, bukan default 0,5 |
+
+Hasil pada data uji (323 kerusakan, 21 berakhir dibuang):
+
+| Metrik | Nilai |
+|---|---|
+| ROC-AUC | 0,762 |
+| PR-AUC | 0,255 (tebakan acak 0,065 - **naik 3,9x**) |
+| Akurasi | 92,6% |
+| Balanced accuracy | 67,2% |
+| Presisi | 42,1% |
+| Recall | 38,1% |
+
+**Jangan pakai akurasi sebagai patokan.** Menebak "semua bisa diperbaiki"
+menghasilkan akurasi 93,5% tetapi menangkap nol PART mati. Yang berarti di
+sini ROC-AUC dan lift PR-AUC.
+
+### Ambang risiko ditetapkan dari kapasitas kerja
+
+Ambang **tidak** memakai default 0,5, dan **tidak** dioptimasi dari data uji.
+Aturannya: model mengurutkan seluruh kerusakan menurut risiko, lalu sebanyak
+kapasitas kerja per bulan itulah yang ditandai `HIGH`. Ambang dihitung dari
+prediksi out-of-fold data latih, lalu hasilnya baru dilaporkan di data uji.
+
+Satu angka yang mengatur semuanya, ada di `config.py`:
+
+```python
+SCRAP_CAPACITY_PER_MONTH = 3   # berapa PART/bulan yang sanggup ditindaklanjuti
+```
+
+Pilihan lain, diukur di data uji (~106 kerusakan masuk bengkel per bulan):
+
+| Kapasitas/bln | Ambang | Presisi | Tertangkap |
+|---|---|---|---|
+| **3** (dipakai) | 0,68 | **42,1%** | 8 dari 21 |
+| 5 | 0,64 | 30,8% | 8 dari 21 |
+| 10 | 0,58 | 18,2% | 8 dari 21 |
+| 15 | 0,52 | 16,7% | 10 dari 21 |
+| 30 | 0,47 | 12,0% | 14 dari 21 |
+
+Perhatikan baris 3 sampai 10: memperbesar daftar **tidak menambah tangkapan
+sama sekali**, hanya menurunkan presisi. Jadi hanya ada dua titik yang masuk
+akal - 3/bulan untuk daftar pendek yang tajam, atau 30/bulan kalau mengejar
+tangkapan sebanyak mungkin. Ubah satu angka itu lalu jalankan ulang
+`python train_scrap.py`.
+
+Presisi 42,1% berarti hampir separuh PART yang ditandai memang benar-benar
+dibuang - dibanding 6,5% kalau menebak acak, itu **6,5x lebih tepat sasaran**.
+
+### 7 fitur
+
+| Fitur | Arti |
+|---|---|
+| `log_age_total` | Umur PART sejak pertama kali tercatat |
+| `log_cycle_age` | Sudah berapa lama terpasang sebelum rusak |
+| `log_prior_repaired_count` | Berapa kali pernah berhasil diperbaiki |
+| `has_prior_repair` | Pernah diperbaiki atau belum sama sekali |
+| `log_prior_failure_count` | Jumlah kerusakan sebelumnya |
+| `is_first_failure_ever` | Apakah ini kerusakan pertamanya |
+| `item_type_category` | Jenis PART (yang riwayatnya sedikit digabung) |
+
+Polanya: **PART tua yang baru pertama kali rusak dan belum pernah diperbaiki
+cenderung langsung dibuang.** PART yang sudah pernah berhasil diperbaiki
+terbukti masih bisa diperbaiki lagi.
+
+### Angkanya SKOR, bukan persentase
+
+`scrap_score` **tidak boleh dibaca sebagai peluang**. Model dilatih dengan bobot
+kelas diseimbangkan dan tidak punya tahap kalibrasi (berbeda dari model
+kerusakan yang dikalibrasi isotonic), sehingga nilainya berkisar 0,3-0,7
+sementara kenyataannya hanya **3,3%** kerusakan yang berakhir dibuang - meleset
+sekitar 12x. Yang bisa dipercaya adalah **urutannya**, bukan besarannya.
+
+Hal yang sama berlaku untuk `death_score_30d` dari `predict_death_risk()`:
+hasil kali probabilitas dengan skor yang belum dikalibrasi, jadi tetap skor
+pemeringkat. Kenyataannya hanya sekitar 0,05% PART yang benar-benar mati dalam
+30 hari.
+
+Karena itu di tampilan pengguna, **sajikan peringkat atau kelompok risiko,
+jangan angkanya**.
+
+### Kelompok risiko dibandingkan terhadap apa
+
+`scrap_risk_level` membandingkan sebuah kerusakan dengan **kerusakan lain yang
+masuk bengkel** - itu populasi tempat ambangnya dikalibrasi (kapasitas 3 per
+bulan dari ~91 kerusakan per bulan).
+
+Kalau `predict_scrap()` dipakai pada PART yang masih sehat ("seandainya rusak
+besok"), kelompoknya tetap dibaca dengan dasar yang sama, dan hasilnya **45,4%
+PART aktif masuk HIGH**. Itu bukan salah hitung: PART aktif memang didominasi
+yang belum pernah rusak, dan itulah justru profil yang paling sering dibuang.
+Tetapi jangan diperlakukan sebagai daftar pendek - untuk PART sehat, pakai
+`predict_death_risk()` dan urutkan berdasarkan skornya.
+
+### Cara label ditentukan
+
+- **Dibuang**: vonis bengkel `UNREPAIRABLE` atau `BROKEN`.
+- **Diperbaiki**: vonis `REPAIRED`, **atau** PART terbukti dipasang kembali.
+- **Tidak dipakai**: tidak keduanya - bisa jadi dibuang tanpa dicatat, bisa
+  jadi masih di bengkel, dan tidak ada cara membedakannya.
+
+Memakai vonis bengkel saja akan membuang ratusan kerusakan yang sudah terbukti
+selamat lewat pemasangan ulang, dan membuat model hanya belajar dari episode
+yang kebetulan dicatat. Bias itu sempat membuat base rate terlihat meledak dari
+4,3% ke 23,5% dalam satu kuartal; setelah pemasangan ulang ikut dihitung,
+angkanya jadi 1,0% ke 6,2%.
+
+**Embargo 30 hari** dipakai karena bukti datang dengan kecepatan berbeda: vonis
+"dibuang" muncul median 2,9 hari, bukti "diperbaiki" lewat pemasangan ulang
+butuh sampai 30 hari. Tanpa embargo, periode terbaru akan tampak penuh
+kerusakan fatal semata-mata karena bukti selamatnya belum sempat muncul.
+
+### Menggabungkan dua model
+
+```
+risiko MATI 30 hari = P(rusak dalam 30 hari) x P(dibuang | rusak)
+```
+
+Sudah dibacktest pada 74.412 observasi (37 benar-benar mati):
+
+| Skor | ROC-AUC | Lift |
+|---|---|---|
+| Model kerusakan saja | 0,789 | 5,2x |
+| Model scrap saja | 0,587 | 1,5x |
+| **Gabungan** | **0,812** | **7,2x** |
+
+Selisihnya nyata: 100% dari 500 resampling memihak gabungan.
+
+**Tetapi kejadiannya sangat jarang** - sekitar 2-3 PART mati per bulan dari
+belasan ribu PART aktif. Menandai 2.000 PART hanya menangkap 11 dari 37.
+Jadi `predict_death_risk()` cocok sebagai **daftar pantau perencanaan stok**,
+bukan pemicu tindakan per PART. Untuk keputusan per PART, pakai
+`predict_scrap()` di saat kerusakan - di sana populasinya hanya ~96 kerusakan
+per bulan dan modelnya jauh lebih tajam.
+
+Backtest lengkap: `db_om_preparation/src/backtest_combined_death_risk.py`.
+
+### Keterbatasan model scrap
+
+1. **Kejadiannya sedikit** - 46 dibuang dari 1.407 kerusakan. Rentang
+   ketidakpastian ROC-AUC lebar (95% CI kira-kira 0,67-0,85). Layak sebagai
+   alat bantu prioritas, **belum layak jadi keputusan otomatis**.
+2. **Kerusakan tanpa vonis dan tidak pernah dipasang lagi tidak bisa dilabeli**
+   (873 kejadian). Kalau banyak di antaranya ternyata dibuang tanpa dicatat,
+   model ini melihat gambaran yang terlalu optimis. Perbaikannya ada di
+   disiplin pencatatan bengkel, bukan di model.
+3. **Jenis PART yang belum dikenal otomatis dinilai berisiko tinggi**, karena
+   masuk kelompok "jarang" yang kebetulan sering dibuang. Hasil prediksi
+   menandainya lewat `item_type_known_to_model` - perlakukan yang `False`
+   dengan hati-hati.
+4. **Base rate masih naik antar-kuartal**, jadi tampilkan peringkat atau
+   kelompok risiko, bukan angka persentase.
 
 ## Bukti kesetaraan dengan research
 
@@ -172,6 +430,7 @@ baris-per-baris** dengan view `analytics` hasil research:
 |---|---|
 | Observasi training + 18 fitur + target | 356.100 baris, cocok semua, **0 selisih** |
 | Snapshot PART aktif + 18 fitur | 16.877 baris, cocok semua, **0 selisih** |
+| Kerusakan yang bisa dilabeli (model scrap) | 1.407 baris, 46 dibuang - **sama persis** |
 | Jumlah siklus pemasangan | 24.045 (sama) |
 | Ukuran split latih/validasi/uji | 251.568 / 49.660 / 38.451 (sama) |
 | Jumlah kerusakan per split | 3.852 / 947 / 902 (sama) |

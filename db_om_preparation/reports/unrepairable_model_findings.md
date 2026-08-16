@@ -205,7 +205,66 @@ tetapi menandai 180 dari 323 episode. Kalau tujuannya **daftar pendek yang
 akurat**, ambang 0,65 memberi presisi 36,4% (5,6x base rate) dengan hanya 22
 kandidat. Pilihan ini keputusan operasional, bukan keputusan model.
 
-## 7. Keterbatasan
+## 7. Memakai model ini pada PART yang belum rusak
+
+Model scrap menjawab pertanyaan bersyarat ("kalau rusak, apakah dibuang"),
+tetapi **tidak perlu menunggu kerusakan untuk bisa dijalankan**. Ketujuh
+fiturnya semua bisa dihitung untuk PART yang belum pernah rusak sekali pun -
+diuji pada 16.877 PART aktif, 15.183 di antaranya belum pernah rusak, dan
+seluruh fitur terisi.
+
+Itu membuka pemakaian kedua: mengalikan dengan model 30 hari untuk mendapat
+risiko yang tidak bersyarat.
+
+```
+risiko MATI 30 hari = P(rusak dalam 30 hari) x P(dibuang | rusak)
+```
+
+### Hasil backtest
+
+Implementasi: `src/backtest_combined_death_risk.py`
+
+Diuji pada 74.412 observasi 30-harian sejak 2025-04-01 (embargo 60 hari),
+di mana **37 benar-benar berakhir mati dalam 30 hari** (0,05%):
+
+| Skor yang dipakai | ROC-AUC | PR-AUC | Lift |
+|---|---|---|---|
+| Model 30 hari saja | 0,789 | 0,0026 | 5,2x |
+| Model scrap saja | 0,587 | 0,0008 | 1,5x |
+| **Gabungan (dikalikan)** | **0,812** | **0,0036** | **7,2x** |
+
+Berapa PART mati yang tertangkap kalau menandai N teratas:
+
+| Skor | top 100 | top 500 | top 1.000 | top 2.000 |
+|---|---|---|---|---|
+| Model 30 hari saja | 0 | 1 | 6 | 7 |
+| **Gabungan** | 0 | **4** | 5 | **11** |
+
+Selisih PR-AUC gabungan vs model 30 hari saja: **+0,0012, 95% CI [+0,0004,
++0,0022]** - **100% dari 500 resampling** memihak gabungan.
+
+**Kesimpulan: gabungan terbukti lebih baik, dan keunggulannya bukan
+kebetulan.** Pada beban kerja yang sama (menandai 2.000 PART), gabungan
+menangkap 11 kematian dibanding 7 - naik sekitar setengah kali lipat.
+
+### Tetapi jangan salah baca angkanya
+
+Kejadiannya **sangat jarang**: 37 kematian dari 74.412 observasi selama ~14
+bulan, atau sekitar 2-3 PART mati per bulan. Konsekuensinya:
+
+- Menandai 500 PART hanya menangkap 4 dari 37 (recall 11%, presisi 0,8%).
+- Menandai 2.000 PART menangkap 11 dari 37 (recall 30%).
+
+Jadi gabungan ini **cocok sebagai daftar pantau untuk perencanaan stok**, bukan
+sebagai pemicu tindakan per PART. Untuk keputusan per PART, pemakaian di saat
+kerusakan (Bagian 6) jauh lebih tajam - di sana populasinya hanya ~96
+kerusakan per bulan dengan lift 3,9x.
+
+Catatan: model scrap sendirian buruk untuk tugas ini (ROC-AUC 0,587), dan itu
+memang wajar - dia tidak tahu apa-apa soal *kapan* kerusakan akan terjadi.
+Kerja beratnya dilakukan model 30 hari; model scrap menambah ketajaman.
+
+## 8. Keterbatasan
 
 1. **Sampel sangat kecil.** 46 kejadian scrap, 21 di antaranya di data uji.
    Semua metrik punya rentang ketidakpastian lebar (lihat Bagian 6). Model ini
@@ -225,7 +284,7 @@ kandidat. Pilihan ini keputusan operasional, bukan keputusan model.
    latih dan 21,7% di periode uji. Kekuatan model datang dari fitur umur yang
    lebih stabil, bukan dari jenis PART.
 
-## 8. Saran langkah berikutnya
+## 9. Saran langkah berikutnya
 
 Diurutkan dari yang dampaknya paling besar:
 

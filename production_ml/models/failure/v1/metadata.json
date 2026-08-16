@@ -1,6 +1,6 @@
 {
   "model_version": "v1",
-  "training_date": "2026-08-14T14:57:55.874220+00:00",
+  "training_date": "2026-08-16T14:31:29.724673+00:00",
   "training_period": {
     "observation_from": "2013-01-01 21:00:00",
     "observation_to": "2026-07-31 17:14:44",
@@ -75,6 +75,18 @@
     }
   },
   "validation_base_rate": 0.019069673781715667,
+  "risk_cutoffs": {
+    "high": 0.8496556152733516,
+    "medium": 0.7926986370856796
+  },
+  "cutoff_basis": {
+    "rule": "kapasitas kerja per bulan yang ditetapkan bisnis",
+    "scale": "skor mentah model, bukan probabilitas terkalibrasi",
+    "capacity_per_month": 200,
+    "active_parts_scored": 16877,
+    "flagged_high": 200,
+    "flagged_medium_band": 200
+  },
   "part_model_support": {
     "0120201": 278797,
     "0120202": 26694,

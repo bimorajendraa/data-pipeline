@@ -14,6 +14,9 @@ from dotenv import load_dotenv
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 MODEL_DIR = PACKAGE_DIR / "models"
+# Satu folder per model, masing-masing berisi CURRENT + v1, v2, ... supaya
+# tidak ada dua "v1" yang artinya berbeda.
+FAILURE_MODEL_DIR = MODEL_DIR / "failure"
 
 # --- Fitur final model (18 fitur, urutan wajib sama seperti saat training) ----
 CATEGORICAL_FEATURES = [
@@ -47,9 +50,10 @@ TARGET_HORIZON_DAYS = 30
 OBSERVATION_STEP_DAYS = 30
 
 # --- Split waktu (dengan embargo selebar horizon target) --------------------
+# Batas latih/validasi/uji TIDAK ditulis sebagai tanggal tetap: assign_split()
+# di train.py menghitungnya dari tahun terakhir yang ada di data, supaya
+# training ulang tahun depan tetap menguji pada periode terbaru.
 MIN_OBSERVATION_DATE = "2014-01-01"
-TRAIN_END = "2025-01-01"
-VALIDATION_END = "2026-01-01"
 
 # --- Hyperparameter model ---------------------------------------------------
 # Iterasi TETAP (bukan early stopping): early stopping berbasis AUC pada
@@ -94,10 +98,32 @@ AGE_BAND_LABELS = [
 # hazard chaining langsung, tanpa interpolasi.
 PREDICTION_HORIZON_DAYS = [30, 60, 90, 120]
 
-# Kelompok risiko dibandingkan terhadap base rate validasi (persentase
-# kerusakan sungguhan), bukan ambang absolut yang dikarang.
-RISK_HIGH_MULTIPLIER = 3.0
-RISK_MEDIUM_MULTIPLIER = 1.0
+# --- Toleransi bisnis model kerusakan ---------------------------------------
+#
+# Berapa PART per bulan yang sanggup diprioritaskan (disiapkan penggantinya,
+# dijadwalkan pemeriksaan, atau ditaruh cadangannya di dekat lokasi). Model
+# mengurutkan seluruh PART aktif menurut risiko, lalu sebanyak kapasitas
+# inilah yang ditandai HIGH.
+#
+# Diukur pada data uji 2026 (sekitar 5.500 pemeriksaan PART per bulan):
+#
+#   kapasitas/bln  ambang   presisi   tertangkap    berapa kali lebih tepat
+#              50  0,1365    29,4%    145 dari 902           12,5x
+#             100  0,0994    20,3%    267 dari 902            8,6x
+#             200  0,0882    16,6%    329 dari 902            7,1x
+#             400  0,0450     7,4%    496 dari 902            3,2x
+#             800  0,0372     7,4%    633 dari 902            3,2x
+#
+# Default 200/bulan dipilih karena SETARA dengan aturan lama yang sudah
+# tervalidasi di research (>=3x base rate validasi: presisi 16,6%, recall
+# 36,6%). Jadi perilakunya tidak berubah - yang berubah hanya cara
+# menyetelnya, dari kelipatan statistik menjadi angka kapasitas yang bisa
+# dibicarakan dengan tim operasional.
+#
+# Ubah SATU angka ini kalau kapasitas berubah, lalu jalankan `python train.py`.
+FAILURE_CAPACITY_PER_MONTH = 200
+# Kelompok MEDIUM = lapis berikutnya kalau kapasitas bertambah.
+FAILURE_MEDIUM_CAPACITY_MULTIPLIER = 2.0
 
 # --- Kanonikalisasi teks (client/lokasi) ------------------------------------
 # Mapping yang sudah disetujui reviewer pada fase research. Disimpan sebagai
@@ -110,6 +136,88 @@ TEXT_ABBREVIATION_MAPPING = {"JKT": "JAKARTA"}
 # mirip dibanding kandidat kedua.
 FUZZY_MIN_SCORE = 0.90
 FUZZY_MIN_MARGIN = 0.08
+
+
+# ---------------------------------------------------------------------------
+# Model kedua: risiko PART dibuang (scrap)
+#
+# Model di atas menjawab "kapan PART akan rusak". Model ini menjawab lanjutannya:
+# "kalau sudah rusak, apakah PART itu masih bisa diperbaiki". Keduanya terpisah
+# dan tidak saling menggantikan.
+# ---------------------------------------------------------------------------
+
+SCRAP_MODEL_DIR = MODEL_DIR / "scrap"
+
+# Vonis bengkel yang berarti PART tidak kembali ke layanan.
+SCRAP_STATUS = ("UNREPAIRABLE", "BROKEN")
+# SENDLOG (BROKEN) ikut menutup episode walaupun bukan vonis akhir.
+FAILURE_OUTCOME_STATUS = ("UNREPAIRABLE", "BROKEN", "SENDLOG (BROKEN)")
+REPAIR_COMPLETED_STATUS = "REPAIRED"
+
+# Status UNREPAIRABLE baru dipakai sejak 2025-04-23 bersama proses repair
+# detail. Sebelum itu PART yang dibuang tidak bisa dibedakan dari PART yang
+# sekadar hilang dari catatan, jadi tidak boleh ikut dilatih.
+SCRAP_ERA_START = "2025-04-01"
+# Bukti "dibuang" muncul cepat (median 2,9 hari), bukti "diperbaiki" lewat
+# pemasangan ulang jauh lebih lambat (p80 = 30 hari). Tanpa embargo, periode
+# terbaru akan tampak penuh kerusakan fatal semata-mata karena bukti selamatnya
+# belum sempat muncul.
+SCRAP_EMBARGO_DAYS = 30
+
+# Jenis PART dengan episode lebih sedikit dari ini digabung jadi satu kategori.
+SCRAP_MIN_TYPE_SUPPORT = 20
+
+SCRAP_CATEGORICAL_FEATURES = ["item_type_category"]
+SCRAP_NUMERIC_FEATURES = [
+    "log_age_total",
+    "log_cycle_age",
+    "log_prior_repaired_count",
+    "has_prior_repair",
+    "log_prior_failure_count",
+    "is_first_failure_ever",
+]
+SCRAP_FEATURE_COLUMNS = SCRAP_CATEGORICAL_FEATURES + SCRAP_NUMERIC_FEATURES
+
+# Sengaja hanya 7 fitur: kejadian scrap sedikit, dan menambah fitur terbukti
+# menurunkan performa sesungguhnya walaupun angka validasinya naik.
+SCRAP_RANDOM_STATE = 42
+
+# --- Toleransi bisnis: berapa PART per bulan yang sanggup ditindaklanjuti ----
+#
+# Ini ANGKA KEPUTUSAN BISNIS, bukan hasil hitungan statistik. Ambang risiko
+# diturunkan dari sini: model mengurutkan seluruh kerusakan, lalu sebanyak
+# kapasitas inilah yang ditandai HIGH.
+#
+# Kenapa kapasitas, bukan balanced accuracy: balanced accuracy diam-diam
+# menganggap satu scrap yang kelewat sama ruginya dengan satu salah alarm.
+# Di lapangan tidak begitu, dan yang benar-benar membatasi adalah berapa
+# banyak PART yang sanggup disiapkan penggantinya lebih awal.
+#
+# Diukur pada data uji 2026 (sekitar 106 kerusakan masuk bengkel per bulan):
+#
+#   kapasitas/bln  ambang   presisi   tertangkap
+#               3    0,68     42,1%     8 dari 21
+#               5    0,64     30,8%     8 dari 21
+#              10    0,58     18,2%     8 dari 21
+#              15    0,52     16,7%    10 dari 21
+#              30    0,47     12,0%    14 dari 21
+#
+# Perhatikan baris 3 sampai 10: memperbesar daftar TIDAK menambah tangkapan
+# sama sekali (tetap 8 dari 21), hanya menurunkan presisi. Jadi hanya ada dua
+# titik yang masuk akal - 3/bulan untuk daftar pendek yang tajam, atau
+# 30/bulan kalau memang mengejar tangkapan sebanyak mungkin.
+#
+# Default 3/bulan: daftarnya pendek, hampir separuhnya benar-benar dibuang
+# (42,1% vs 6,5% kalau menebak acak), dan realistis dikerjakan.
+#
+# Ubah SATU angka di bawah ini kalau kapasitas tim berubah, lalu jalankan
+# ulang `python train_scrap.py`. Tidak ada yang lain yang perlu disentuh.
+SCRAP_CAPACITY_PER_MONTH = 3
+# Kelompok MEDIUM = lapis berikutnya yang akan dikerjakan seandainya kapasitas
+# bertambah, dipakai sebagai daftar cadangan.
+SCRAP_MEDIUM_CAPACITY_MULTIPLIER = 2.0
+SCRAP_TEST_START = "2026-04-01"
+SCRAP_ROLLING_CUTOFFS = ["2025-10-01", "2026-01-01", "2026-04-01"]
 
 
 def db_settings() -> dict[str, str]:

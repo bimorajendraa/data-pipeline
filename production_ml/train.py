@@ -30,7 +30,7 @@ import data_reader
 import feature_builder
 
 TRAIN, VALIDATION, TEST = "TRAIN", "VALIDATION", "TEST"
-CURRENT_POINTER = config.MODEL_DIR / "CURRENT"
+CURRENT_POINTER = config.FAILURE_MODEL_DIR / "CURRENT"
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +64,7 @@ def assign_split(observations: pd.DataFrame, data_end: pd.Timestamp) -> pd.Serie
     return split
 
 
-def build_dataset() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int], pd.Timestamp]:
+def build_dataset() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int], pd.Timestamp, pd.DataFrame, pd.DataFrame]:
     """Baca database lalu susun observasi, target, dan fitur."""
     print("[1/5] Membaca event dan siklus pemasangan dari database...")
     events = data_reader.get_events()
@@ -93,7 +93,7 @@ def build_dataset() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int], pd.Time
     features = feature_builder.build_features(
         dataset, support.loc[eligible].reset_index(drop=True)
     )
-    return dataset, features, support_totals, data_end
+    return dataset, features, support_totals, data_end, events, cycles
 
 
 # ---------------------------------------------------------------------------
@@ -160,15 +160,76 @@ def train_model(dataset: pd.DataFrame, features: pd.DataFrame) -> tuple:
     return model, calibrator, metrics
 
 
-# ---------------------------------------------------------------------------
-# Penyimpanan versi
-# ---------------------------------------------------------------------------
+def active_part_scores(
+    model, cycles: pd.DataFrame, events: pd.DataFrame, support_totals: dict[str, int]
+) -> np.ndarray:
+    """Skor MENTAH seluruh PART yang saat ini masih terpasang.
+
+    Dua alasan memakai skor mentah, bukan probabilitas terkalibrasi:
+
+    1. Populasinya harus yang sebenarnya dihadapi production - seluruh PART
+       aktif - bukan grid observasi data latih yang sudah tersaring aturan
+       kelayakan label dan jumlahnya jauh lebih sedikit.
+    2. Kalibrator menghasilkan dataran: 16.877 PART hanya menempati sekitar
+       30 nilai probabilitas berbeda, sehingga jumlah PART yang tertandai
+       melompat dari 97 langsung ke 303 tanpa nilai di antaranya. Skor mentah
+       punya ribuan nilai berbeda dengan URUTAN YANG SAMA PERSIS, jadi batas
+       kelompok bisa ditaruh tepat sesuai kapasitas.
+    """
+    snapshot = feature_builder.current_observations(cycles)
+    snapshot = feature_builder.attach_history(snapshot, events)
+    support = feature_builder.part_model_support(snapshot, support_totals)
+    features = feature_builder.build_features(snapshot, support)
+    return model.predict_proba(features)[:, 1]
+
+
+def choose_cutoffs(active_score: np.ndarray) -> tuple[dict, dict]:
+    """Ambang kelompok risiko diturunkan dari KAPASITAS KERJA bisnis.
+
+    Seluruh PART aktif diurutkan menurut risiko, lalu sebanyak kapasitas per
+    bulan itulah yang masuk kelompok HIGH. Karena tiap PART dinilai ulang
+    setiap 30 hari, jumlah PART di daftar HIGH pada satu saat sama dengan
+    beban kerja per bulan.
+
+    Tidak ada label yang dipakai di sini - hanya urutan skor - jadi tidak ada
+    kebocoran dari data uji.
+    """
+    high = _cutoff_for_count(active_score, config.FAILURE_CAPACITY_PER_MONTH)
+    medium = _cutoff_for_count(
+        active_score,
+        int(config.FAILURE_MEDIUM_CAPACITY_MULTIPLIER * config.FAILURE_CAPACITY_PER_MONTH),
+    )
+    cutoffs = {"high": high, "medium": medium}
+    basis = {
+        "rule": "kapasitas kerja per bulan yang ditetapkan bisnis",
+        "scale": "skor mentah model, bukan probabilitas terkalibrasi",
+        "capacity_per_month": config.FAILURE_CAPACITY_PER_MONTH,
+        "active_parts_scored": int(len(active_score)),
+        # Jumlah yang benar-benar tercapai bisa meleset dari kapasitas karena
+        # kalibrator menghasilkan banyak skor kembar - lihat _cutoff_for_count.
+        "flagged_high": int((active_score >= high).sum()),
+        "flagged_medium_band": int(((active_score >= medium) & (active_score < high)).sum()),
+    }
+    return cutoffs, basis
+
+
+def _cutoff_for_count(score: np.ndarray, wanted: int) -> float:
+    """Ambang yang jumlah PART tertandainya paling dekat dengan `wanted`.
+
+    Tidak memakai kuantil biasa karena kalibrator menghasilkan dataran skor:
+    banyak PART punya nilai persis sama, sehingga menggeser ambang sedikit
+    saja bisa menarik ratusan PART sekaligus. Mencari di antara nilai skor
+    yang benar-benar ada membuat jumlahnya sedekat mungkin dengan kapasitas.
+    """
+    candidates = np.unique(score)
+    counts = np.array([(score >= value).sum() for value in candidates])
+    return float(candidates[int(np.argmin(np.abs(counts - wanted)))])
 
 
 def next_version() -> str:
     existing = [
         int(path.name[1:])
-        for path in config.MODEL_DIR.glob("v*")
+        for path in config.FAILURE_MODEL_DIR.glob("v*")
         if path.is_dir() and path.name[1:].isdigit()
     ]
     return f"v{max(existing, default=0) + 1}"
@@ -178,11 +239,11 @@ def current_version() -> str | None:
     if not CURRENT_POINTER.exists():
         return None
     version = CURRENT_POINTER.read_text(encoding="utf-8").strip()
-    return version if (config.MODEL_DIR / version / "metadata.json").exists() else None
+    return version if (config.FAILURE_MODEL_DIR / version / "metadata.json").exists() else None
 
 
 def load_metadata(version: str) -> dict:
-    path = config.MODEL_DIR / version / "metadata.json"
+    path = config.FAILURE_MODEL_DIR / version / "metadata.json"
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -194,8 +255,10 @@ def save_version(
     support_totals: dict[str, int],
     dataset: pd.DataFrame,
     data_end: pd.Timestamp,
+    cutoffs: dict,
+    cutoff_basis: dict,
 ) -> dict:
-    directory = config.MODEL_DIR / version
+    directory = config.FAILURE_MODEL_DIR / version
     directory.mkdir(parents=True, exist_ok=True)
 
     model.save_model(str(directory / "model.cbm"))
@@ -220,9 +283,11 @@ def save_version(
         "categorical_features": config.CATEGORICAL_FEATURES,
         "hyperparameters": {**config.CATBOOST_PARAMS, "random_seed": config.RANDOM_STATE},
         "evaluation_metrics": metrics,
-        # Base rate validasi jadi jangkar kelompok risiko: "tinggi" berarti
-        # tinggi dibanding kenyataan historis, bukan dibanding angka karangan.
         "validation_base_rate": validation["positives"] / validation["rows"],
+        # Ambang kelompok risiko bukan hasil optimasi statistik, melainkan
+        # diturunkan dari kapasitas kerja yang ditetapkan bisnis (config.py).
+        "risk_cutoffs": cutoffs,
+        "cutoff_basis": cutoff_basis,
         # Dibekukan supaya kategori tipe PART saat prediksi persis sama dengan
         # yang dipelajari model. Ikut diperbarui setiap kali training ulang.
         "part_model_support": support_totals,
@@ -262,14 +327,17 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    config.MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    dataset, features, support_totals, data_end = build_dataset()
+    config.FAILURE_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    dataset, features, support_totals, data_end, events, cycles = build_dataset()
     model, calibrator, metrics = train_model(dataset, features)
+    cutoffs, cutoff_basis = choose_cutoffs(
+        active_part_scores(model, cycles, events, support_totals))
 
     version = next_version()
-    save_version(version, model, calibrator, metrics, support_totals, dataset, data_end)
+    save_version(version, model, calibrator, metrics, support_totals, dataset,
+                 data_end, cutoffs, cutoff_basis)
 
-    print(f"[5/5] Tersimpan sebagai {version} di {config.MODEL_DIR / version}")
+    print(f"[5/5] Tersimpan sebagai {version} di {config.FAILURE_MODEL_DIR / version}")
     for name in ("train", "validation", "test"):
         part = metrics[name]
         print(

@@ -44,13 +44,13 @@ def _load_model() -> tuple[CatBoostClassifier, object, dict]:
     if _LOADED is not None:
         return _LOADED
 
-    pointer = config.MODEL_DIR / "CURRENT"
+    pointer = config.FAILURE_MODEL_DIR / "CURRENT"
     if not pointer.exists():
         raise FileNotFoundError(
-            f"Belum ada model production di {config.MODEL_DIR}. "
+            f"Belum ada model kerusakan di {config.FAILURE_MODEL_DIR}. "
             "Jalankan dulu: python train.py"
         )
-    directory = config.MODEL_DIR / pointer.read_text(encoding="utf-8").strip()
+    directory = config.FAILURE_MODEL_DIR / pointer.read_text(encoding="utf-8").strip()
 
     model = CatBoostClassifier()
     model.load_model(str(directory / "model.cbm"))
@@ -60,16 +60,16 @@ def _load_model() -> tuple[CatBoostClassifier, object, dict]:
     return _LOADED
 
 
-def _risk_level(probability: float, base_rate: float) -> str:
-    """Kelompokkan risiko relatif terhadap frekuensi kerusakan historis.
+def _risk_level(probability: float, cutoffs: dict[str, float]) -> str:
+    """Kelompokkan risiko memakai ambang yang ditetapkan saat training.
 
-    Ambangnya sengaja relatif, bukan angka mutlak: "tinggi" berarti jauh di
-    atas kenyataan historis, dan tetap bermakna walaupun tingkat kerusakan
-    keseluruhan berubah setelah training ulang.
+    Ambangnya diturunkan dari kapasitas kerja yang ditetapkan bisnis, bukan
+    angka bulat yang dikarang: sebanyak PART yang sanggup ditindaklanjuti per
+    bulan itulah yang masuk kelompok HIGH. Lihat config.py.
     """
-    if probability >= config.RISK_HIGH_MULTIPLIER * base_rate:
+    if probability >= cutoffs["high"]:
         return "HIGH"
-    if probability >= config.RISK_MEDIUM_MULTIPLIER * base_rate:
+    if probability >= cutoffs["medium"]:
         return "MEDIUM"
     return "LOW"
 
@@ -106,10 +106,17 @@ def predict(item_id: str) -> dict:
     # Hazard tiap 30 hari, lalu dirantai jadi risiko kumulatif.
     steps = max(config.PREDICTION_HORIZON_DAYS) // config.OBSERVATION_STEP_DAYS
     survival = 1.0
+    tier_score = 0.0
     cumulative_risk: dict[int, float] = {}
     for step in range(steps):
         features = feature_builder.project_features(snapshot, support, step)
-        hazard = float(calibrator.predict(model.predict_proba(features)[:, 1])[0])
+        raw = float(model.predict_proba(features)[:, 1][0])
+        if step == 0:
+            # Kelompok risiko memakai skor mentah langkah pertama: urutannya
+            # sama dengan probabilitas terkalibrasi, tetapi nilainya jauh
+            # lebih halus sehingga batas kapasitas bisa tepat. Lihat train.py.
+            tier_score = raw
+        hazard = float(calibrator.predict([raw])[0])
         survival *= 1.0 - hazard
         cumulative_risk[(step + 1) * config.OBSERVATION_STEP_DAYS] = 1.0 - survival
 
@@ -117,12 +124,11 @@ def predict(item_id: str) -> dict:
         f"failure_probability_{days}d": round(cumulative_risk[days], 4)
         for days in config.PREDICTION_HORIZON_DAYS
     }
-    horizon_risk = cumulative_risk[config.TARGET_HORIZON_DAYS]
 
     return {
         "item_id": snapshot["item_identifier_clean"].iloc[0],
         **probabilities,
-        "risk_level": _risk_level(horizon_risk, metadata["validation_base_rate"]),
+        "risk_level": _risk_level(tier_score, metadata["risk_cutoffs"]),
         "model_version": metadata["model_version"],
         "as_of": str(snapshot["observation_on"].iloc[0]),
     }
