@@ -41,7 +41,30 @@ NUMERIC_FEATURES = [
     "month_sin",
     "month_cos",
 ]
-FEATURE_COLUMNS = CATEGORICAL_FEATURES + NUMERIC_FEATURES
+# --- Fitur kondisi armada (lintas-PART) --------------------------------------
+#
+# Ke-15 fitur di atas semuanya bicara tentang PART itu sendiri. Tiga fitur ini
+# melihat keadaan di sekelilingnya: seberapa sering model PART ini rusak
+# belakangan, dan berapa unit yang sedang terpasang.
+#
+# Bedanya dengan part_model_category penting: kategori hanya tahu IDENTITAS
+# model dan sifatnya statis, sedangkan laju armada tahu KONDISI TERKINI -
+# menangkap cacat satu batch produksi, kohort yang menua bersama, atau masalah
+# musiman.
+#
+# Terbukti menambah daya tebak (research: reports/fleet_features_experiment.md):
+# ROC-AUC 0,7947 -> 0,8211, lift 6,05 -> 6,86, dengan 95% CI selisih PR-AUC
+# [+0,0129, +0,0255] - seluruhnya di atas nol. Pada kapasitas 200 PART/bulan,
+# tertangkap 79 kerusakan dibanding 66 sebelumnya.
+FLEET_FEATURES = [
+    "log_model_failures_90d",
+    "model_failure_rate_90d",
+    "log_model_fleet_size",
+]
+# Jendela waktu untuk menghitung laju kerusakan armada.
+FLEET_WINDOW_DAYS = 90
+
+FEATURE_COLUMNS = CATEGORICAL_FEATURES + NUMERIC_FEATURES + FLEET_FEATURES
 
 # --- Target dan observasi ---------------------------------------------------
 # Target: PART mengalami failure onset dalam 30 hari SETELAH observation_on.
@@ -217,7 +240,28 @@ SCRAP_CAPACITY_PER_MONTH = 3
 # bertambah, dipakai sebagai daftar cadangan.
 SCRAP_MEDIUM_CAPACITY_MULTIPLIER = 2.0
 SCRAP_TEST_START = "2026-04-01"
-SCRAP_ROLLING_CUTOFFS = ["2025-10-01", "2026-01-01", "2026-04-01"]
+# Titik potong untuk MEMERIKSA (bukan memilih) model. Semuanya wajib lebih
+# awal dari SCRAP_TEST_START - kalau ada yang menyentuh periode uji, angka
+# akhirnya tidak lagi jujur.
+SCRAP_ROLLING_CUTOFFS = ["2025-10-01", "2026-01-01"]
+
+# Model DITETAPKAN DI MUKA, tidak dipilih dari data.
+#
+# Alasannya diukur, bukan diasumsikan: fold pemeriksaan hanya berisi 7 dan 2
+# kejadian "dibuang". PR-AUC pada sampel sekecil itu nyaris acak, sehingga
+# "memilih model terbaik" darinya sama saja memilih dari derau - terbukti
+# saat dicoba, pemenang fold justru yang paling buruk di data uji.
+#
+# Yang dipakai adalah rata-rata regresi logistik dan random forest. Dasarnya
+# prinsip, bukan angka: keduanya salah dengan cara berbeda (yang satu
+# menangkap kecenderungan lurus, yang lain ambang dan kombinasi), dan
+# merata-ratakan dua model yang salahnya tidak searah menurunkan ragam
+# tanpa perlu bukti dari sampel kecil.
+#
+# Tabel perbandingan tetap dicetak train_scrap.py sebagai PEMERIKSAAN -
+# supaya kalau suatu saat ada kandidat yang unggul jauh melampaui derau,
+# hal itu terlihat.
+SCRAP_MODEL_NAME = "Gabungan LogReg + RF"
 
 
 def db_settings() -> dict[str, str]:

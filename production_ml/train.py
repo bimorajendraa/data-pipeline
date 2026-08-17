@@ -64,7 +64,7 @@ def assign_split(observations: pd.DataFrame, data_end: pd.Timestamp) -> pd.Serie
     return split
 
 
-def build_dataset() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int], pd.Timestamp, pd.DataFrame, pd.DataFrame]:
+def build_dataset() -> tuple:
     """Baca database lalu susun observasi, target, dan fitur."""
     print("[1/5] Membaca event dan siklus pemasangan dari database...")
     events = data_reader.get_events()
@@ -75,6 +75,9 @@ def build_dataset() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int], pd.Time
     print("[2/5] Menyusun observasi 30-harian dan target...")
     observations = feature_builder.training_observations(cycles)
     observations = feature_builder.attach_history(observations, events)
+    # Kondisi armada dihitung point-in-time untuk tiap observasi.
+    episodes = data_reader.get_failure_episodes()
+    observations = feature_builder.attach_fleet(observations, cycles, episodes)
 
     # Dukungan historis dihitung dari SELURUH observasi, sebelum penyaringan
     # kelayakan, supaya nilainya benar-benar point-in-time.
@@ -93,7 +96,7 @@ def build_dataset() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int], pd.Time
     features = feature_builder.build_features(
         dataset, support.loc[eligible].reset_index(drop=True)
     )
-    return dataset, features, support_totals, data_end, events, cycles
+    return dataset, features, support_totals, data_end, events, cycles, episodes
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +164,8 @@ def train_model(dataset: pd.DataFrame, features: pd.DataFrame) -> tuple:
 
 
 def active_part_scores(
-    model, cycles: pd.DataFrame, events: pd.DataFrame, support_totals: dict[str, int]
+    model, cycles: pd.DataFrame, events: pd.DataFrame, support_totals: dict[str, int],
+    episodes: pd.DataFrame, fleet: pd.DataFrame,
 ) -> np.ndarray:
     """Skor MENTAH seluruh PART yang saat ini masih terpasang.
 
@@ -178,6 +182,7 @@ def active_part_scores(
     """
     snapshot = feature_builder.current_observations(cycles)
     snapshot = feature_builder.attach_history(snapshot, events)
+    snapshot = feature_builder.attach_fleet_snapshot(snapshot, fleet)
     support = feature_builder.part_model_support(snapshot, support_totals)
     features = feature_builder.build_features(snapshot, support)
     return model.predict_proba(features)[:, 1]
@@ -257,18 +262,28 @@ def save_version(
     data_end: pd.Timestamp,
     cutoffs: dict,
     cutoff_basis: dict,
+    fleet: pd.DataFrame,
 ) -> dict:
     directory = config.FAILURE_MODEL_DIR / version
     directory.mkdir(parents=True, exist_ok=True)
 
     model.save_model(str(directory / "model.cbm"))
     joblib.dump(calibrator, directory / "calibrator.joblib")
+    # Potret armada ikut disimpan supaya prediksi tidak perlu membangunnya
+    # ulang dari nol. Sah dipakai selama data belum bertambah - predict.py
+    # memeriksanya lewat dataset_max_event_on.
+    #
+    # CSV, bukan JSON: kode model seperti "0120201" akan dibaca ulang sebagai
+    # angka 120201 oleh pembaca JSON, nol di depannya hilang, dan seluruh
+    # pencocokan gagal diam-diam.
+    fleet.to_csv(directory / "fleet_snapshot.csv", index=False)
 
     observed = pd.to_datetime(dataset["observation_on"])
     validation = metrics["validation"]
     metadata = {
         "model_version": version,
         "training_date": datetime.now(timezone.utc).isoformat(),
+        "fleet_snapshot_at": str(data_end),
         "training_period": {
             "observation_from": str(observed.min()),
             "observation_to": str(observed.max()),
@@ -328,14 +343,15 @@ def main() -> int:
     args = parser.parse_args()
 
     config.FAILURE_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    dataset, features, support_totals, data_end, events, cycles = build_dataset()
+    dataset, features, support_totals, data_end, events, cycles, episodes = build_dataset()
     model, calibrator, metrics = train_model(dataset, features)
+    fleet = feature_builder.fleet_snapshot(cycles, episodes, data_end)
     cutoffs, cutoff_basis = choose_cutoffs(
-        active_part_scores(model, cycles, events, support_totals))
+        active_part_scores(model, cycles, events, support_totals, episodes, fleet))
 
     version = next_version()
     save_version(version, model, calibrator, metrics, support_totals, dataset,
-                 data_end, cutoffs, cutoff_basis)
+                 data_end, cutoffs, cutoff_basis, fleet)
 
     print(f"[5/5] Tersimpan sebagai {version} di {config.FAILURE_MODEL_DIR / version}")
     for name in ("train", "validation", "test"):

@@ -34,8 +34,8 @@ PART terpasang normal
 | Prediksi | `predict()` | `predict_scrap()` |
 | 1 baris data | 1 PART pada 1 titik waktu | 1 kejadian kerusakan |
 | Data latih | 356.100 baris, 5.876 kerusakan | 1.407 kerusakan, 46 dibuang |
-| Fitur | 18 | 7 |
-| ROC-AUC uji | 0,795 | 0,762 |
+| Fitur | 21 | 7 |
+| ROC-AUC uji | 0,821 | 0,762 |
 
 Keduanya berdiri sendiri dan tidak saling menggantikan. Rantai pembacaan
 database dipakai bersama, jadi definisi "kerusakan", "siklus pemasangan", dan
@@ -73,11 +73,11 @@ predict("011201100101164")
 ```python
 {
     "item_id": "011201100101164",
-    "failure_probability_30d": 0.045,
-    "failure_probability_60d": 0.088,
-    "failure_probability_90d": 0.129,
-    "failure_probability_120d": 0.1682,
-    "risk_level": "MEDIUM",
+    "failure_probability_30d": 0.0494,
+    "failure_probability_60d": 0.0964,
+    "failure_probability_90d": 0.141,
+    "failure_probability_120d": 0.1835,
+    "risk_level": "LOW",
     "model_version": "v1",
     "as_of": "2026-08-03 11:07:22",
 }
@@ -104,7 +104,7 @@ predict_scrap("011201100101164")
 ```python
 {
     "item_id": "011201100101164",
-    "scrap_score": 0.4816,          # SKOR PEMERINGKAT, bukan persentase
+    "scrap_probability": 0.0259,    # sudah dikalibrasi - perkiraan persen
     "scrap_risk_level": "LOW",
     "scrap_risk_basis": "dibandingkan kerusakan lain yang masuk bengkel",
     "item_type": "MOTOR",
@@ -127,7 +127,7 @@ benar-benar mati dalam 30 hari - baca peringatannya di bagian "Model scrap".
 production_ml/
 ├── config.py           # semua konstanta kedua model
 ├── data_reader.py      # SELECT read-only: event, siklus, kerusakan
-├── feature_builder.py  # observasi + riwayat + 18 fitur model kerusakan
+├── feature_builder.py  # observasi + riwayat + armada + 21 fitur kerusakan
 ├── scrap_features.py   # label nasib kerusakan + 7 fitur model scrap
 ├── train.py            # latih model kerusakan
 ├── train_scrap.py      # latih model scrap
@@ -153,7 +153,7 @@ database (tabel mentah)
 data_reader      event operasional + siklus pemasangan
       |
       v
-feature_builder  observasi -> riwayat point-in-time -> 18 fitur
+feature_builder  observasi -> riwayat + armada -> 21 fitur
       |
       +--------------------+
       v                    v
@@ -173,20 +173,21 @@ yang dipelajari model dan fitur yang dipakai di production.
 | Algoritma | CatBoost (200 iterasi, depth 4, lr 0.03, l2 10, kelas diseimbangkan) |
 | Kalibrasi | Isotonic regression, dilatih pada data validasi |
 | Target | PART mengalami kerusakan dalam 30 hari setelah tanggal observasi |
-| Fitur | 18 (3 kategorikal + 15 numerik) |
+| Fitur | 21 (3 kategorikal + 15 riwayat PART + 3 kondisi armada) |
 | Split | Berbasis waktu dengan jeda (embargo): tahun terakhir = uji, setahun sebelumnya = validasi |
 
 Hasil training terakhir (data s/d 2026-08-03):
 
 | Bagian | Baris | Kerusakan | ROC-AUC | PR-AUC |
 |---|---|---|---|---|
-| Latih | 251.568 | 3.852 | 0,8454 | 0,1196 |
-| Validasi | 49.660 | 947 | 0,7399 | 0,1087 |
-| Uji | 38.451 | 902 | **0,7947** | 0,1420 |
+| Latih | 251.568 | 3.852 | 0,8609 | 0,1335 |
+| Validasi | 49.660 | 947 | 0,8167 | 0,1141 |
+| Uji | 38.451 | 902 | **0,8211** | **0,1610** |
 
-Brier terkalibrasi pada data uji: 0,0216.
+Brier terkalibrasi pada data uji: 0,0215. Lift PR-AUC: **6,86x** dibanding
+menebak acak.
 
-### 18 fitur final
+### 21 fitur final
 
 Identitas & konteks: `part_model_category`, `client_category`
 Umur: `installation_age_band`, `log_days_since_installation`
@@ -197,6 +198,40 @@ Jendela waktu: `log_prior_corrective_30d`, `log_prior_failure_365d`,
 `log_prior_events_180d`
 Lifecycle: `log_previous_cycle_lifetime_mean`, `has_previous_cycle`
 Musiman: `month_sin`, `month_cos`
+Kondisi armada: `model_failure_rate_90d`, `log_model_failures_90d`,
+`log_model_fleet_size`
+
+### Kondisi armada - fitur lintas-PART
+
+Lima belas fitur pertama semuanya bicara tentang PART itu sendiri. Tiga fitur
+terakhir melihat keadaan di sekelilingnya: **seberapa sering model PART ini
+rusak dalam 90 hari terakhir**, dinormalkan per jumlah unit yang sedang
+terpasang.
+
+Bedanya dengan `part_model_category` penting: kategori hanya tahu *identitas*
+model dan sifatnya statis, sedangkan laju armada tahu *kondisi terkini* -
+menangkap cacat satu batch produksi, kohort yang menua bersama, atau masalah
+musiman.
+
+Dampaknya terukur (research: `db_om_preparation/reports/fleet_features_experiment.md`):
+
+| | Tanpa armada | Dengan armada |
+|---|---|---|
+| ROC-AUC uji | 0,7947 | **0,8211** |
+| PR-AUC uji | 0,1420 | **0,1610** |
+| Tertangkap pada 200 PART teratas | 66 | **79** |
+
+Selisih PR-AUC +0,0189 dengan 95% CI [+0,0129, +0,0255] - seluruhnya di atas
+nol. `model_failure_rate_90d` menempati peringkat 2 dari 21 fitur.
+
+**Konsekuensi pada prediksi**: fitur ini butuh riwayat kerusakan SELURUH model
+PART, bukan hanya PART yang diminta. Membangunnya dari nol makan waktu ~45
+detik, jadi potretnya **ikut disimpan bersama model** saat training dan dipakai
+ulang selama data belum bertambah. `predict()` memeriksa `dataset_max_event_on`
+lebih dulu; begitu ada kejadian baru, potretnya dihitung ulang supaya tidak
+pernah memakai angka basi.
+
+Hasilnya: panggilan pertama sekitar **7 detik**, berikutnya sekitar 4 detik.
 
 ### Risiko beberapa horizon
 
@@ -333,21 +368,30 @@ Polanya: **PART tua yang baru pertama kali rusak dan belum pernah diperbaiki
 cenderung langsung dibuang.** PART yang sudah pernah berhasil diperbaiki
 terbukti masih bisa diperbaiki lagi.
 
-### Angkanya SKOR, bukan persentase
+### Angkanya sudah dikalibrasi, tetapi tetap perkiraan
 
-`scrap_score` **tidak boleh dibaca sebagai peluang**. Model dilatih dengan bobot
-kelas diseimbangkan dan tidak punya tahap kalibrasi (berbeda dari model
-kerusakan yang dikalibrasi isotonic), sehingga nilainya berkisar 0,3-0,7
-sementara kenyataannya hanya **3,3%** kerusakan yang berakhir dibuang - meleset
-sekitar 12x. Yang bisa dipercaya adalah **urutannya**, bukan besarannya.
+`scrap_probability` boleh dibaca sebagai persentase - tetapi **perkiraan**,
+bukan angka pasti.
 
-Hal yang sama berlaku untuk `death_score_30d` dari `predict_death_risk()`:
-hasil kali probabilitas dengan skor yang belum dikalibrasi, jadi tetap skor
-pemeringkat. Kenyataannya hanya sekitar 0,05% PART yang benar-benar mati dalam
-30 hari.
+Sebelum dikalibrasi, model mengeluarkan angka 0,3-0,7 padahal kenyataannya
+hanya 3,3% kerusakan berakhir dibuang: meleset sekitar 12x. Platt scaling
+(regresi logistik satu variabel) memperbaikinya:
 
-Karena itu di tampilan pengguna, **sajikan peringkat atau kelompok risiko,
-jangan angkanya**.
+| | Sebelum | Sesudah |
+|---|---|---|
+| Rata-rata keluaran | 41,2% | **2,5%** |
+| Brier | 0,1851 | **0,0603** |
+| ROC-AUC | 0,762 | 0,762 (tidak berubah) |
+
+Sigmoid bersifat monoton, jadi **urutannya dijamin tidak berubah** - kalibrasi
+hanya memperbaiki skalanya. Isotonic (yang dipakai model kerusakan) sengaja
+TIDAK dipakai di sini: dengan kejadian sesedikit ini ia hanya menghasilkan 8
+nilai berbeda dan justru merusak urutan (ROC turun ke 0,699).
+
+**Catatan penting**: kalibrator dipasang pada data latih yang tingkat scrap-nya
+2,3%, sementara belakangan naik ke 6,5%. Jadi angkanya cenderung
+**merendahkan** risiko sesungguhnya. Urutannya tetap yang paling bisa
+dipercaya.
 
 ### Kelompok risiko dibandingkan terhadap apa
 
@@ -428,8 +472,8 @@ baris-per-baris** dengan view `analytics` hasil research:
 
 | Yang dibandingkan | Hasil |
 |---|---|
-| Observasi training + 18 fitur + target | 356.100 baris, cocok semua, **0 selisih** |
-| Snapshot PART aktif + 18 fitur | 16.877 baris, cocok semua, **0 selisih** |
+| Observasi training + 18 fitur dasar + target | 356.100 baris, cocok semua, **0 selisih** |
+| Snapshot PART aktif + 18 fitur dasar | 16.877 baris, cocok semua, **0 selisih** |
 | Kerusakan yang bisa dilabeli (model scrap) | 1.407 baris, 46 dibuang - **sama persis** |
 | Jumlah siklus pemasangan | 24.045 (sama) |
 | Ukuran split latih/validasi/uji | 251.568 / 49.660 / 38.451 (sama) |

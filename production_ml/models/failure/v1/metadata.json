@@ -1,6 +1,7 @@
 {
   "model_version": "v1",
-  "training_date": "2026-08-16T14:31:29.724673+00:00",
+  "training_date": "2026-08-17T05:20:54.441260+00:00",
+  "fleet_snapshot_at": "2026-08-03 11:07:22",
   "training_period": {
     "observation_from": "2013-01-01 21:00:00",
     "observation_to": "2026-07-31 17:14:44",
@@ -32,7 +33,10 @@
     "log_previous_cycle_lifetime_mean",
     "has_previous_cycle",
     "month_sin",
-    "month_cos"
+    "month_cos",
+    "log_model_failures_90d",
+    "model_failure_rate_90d",
+    "log_model_fleet_size"
   ],
   "categorical_features": [
     "part_model_category",
@@ -56,28 +60,28 @@
     "train": {
       "rows": 251568,
       "positives": 3852,
-      "roc_auc": 0.8454090202566242,
-      "pr_auc": 0.11961560206320476
+      "roc_auc": 0.8609464352932755,
+      "pr_auc": 0.13351091304144014
     },
     "validation": {
       "rows": 49660,
       "positives": 947,
-      "roc_auc": 0.7398797096395323,
-      "pr_auc": 0.10874019355368492
+      "roc_auc": 0.8166735531828981,
+      "pr_auc": 0.11408055523647215
     },
     "test": {
       "rows": 38451,
       "positives": 902,
-      "roc_auc": 0.7946841256766694,
-      "pr_auc": 0.14196523427221822,
-      "brier_raw": 0.13039510803074966,
-      "brier_calibrated": 0.021570111859566293
+      "roc_auc": 0.821096073783619,
+      "pr_auc": 0.16095243820224794,
+      "brier_raw": 0.1836174695159322,
+      "brier_calibrated": 0.021463177104110442
     }
   },
   "validation_base_rate": 0.019069673781715667,
   "risk_cutoffs": {
-    "high": 0.8496556152733516,
-    "medium": 0.7926986370856796
+    "high": 0.871883819512776,
+    "medium": 0.8362129971025275
   },
   "cutoff_basis": {
     "rule": "kapasitas kerja per bulan yang ditetapkan bisnis",

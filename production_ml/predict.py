@@ -24,6 +24,7 @@ import json
 import sys
 
 import joblib
+import pandas as pd
 from catboost import CatBoostClassifier
 
 import config
@@ -31,6 +32,53 @@ import data_reader
 import feature_builder
 
 _LOADED: tuple[CatBoostClassifier, object, dict] | None = None
+_FLEET: object = None
+
+
+def _fleet_snapshot(data_end):
+    """Kondisi armada tiap model PART.
+
+    Perlu riwayat kerusakan SELURUH model PART, bukan hanya PART yang
+    ditanyakan - membangunnya dari nol makan waktu sekitar 45 detik. Karena
+    itu potret hasil training dipakai ulang SELAMA data belum bertambah;
+    begitu ada kejadian baru di database, potretnya dihitung ulang supaya
+    tidak pernah memakai angka yang basi.
+    """
+    global _FLEET
+    if _FLEET is not None:
+        return _FLEET
+
+    _, _, metadata = _load_model()
+    directory = config.FAILURE_MODEL_DIR / metadata["model_version"]
+    stored = directory / "fleet_snapshot.csv"
+    if stored.exists() and metadata.get("fleet_snapshot_at") == str(data_end):
+        # dtype=str WAJIB: kode model punya nol di depan yang akan hilang
+        # kalau dibaca sebagai angka, dan pencocokan gagal tanpa suara.
+        snapshot = pd.read_csv(stored, dtype={"item_model_code_clean": str})
+        if _covers_known_models(snapshot, metadata):
+            _FLEET = snapshot
+            return _FLEET
+
+    cycles = data_reader.get_cycles()
+    episodes = data_reader.get_failure_episodes()
+    _FLEET = feature_builder.fleet_snapshot(cycles, episodes, data_end)
+    return _FLEET
+
+
+def _covers_known_models(snapshot, metadata: dict) -> bool:
+    """Pastikan potret tersimpan benar-benar cocok dengan model PART yang
+    dikenal.
+
+    Penjaga ini ada karena kegagalannya SENYAP: kalau kode model tidak cocok,
+    fitur armada diam-diam jadi nol dan prediksi tetap keluar - hanya saja
+    salah. Lebih baik menghitung ulang daripada memakai potret yang tidak
+    cocok.
+    """
+    known = set(metadata.get("part_model_support", {}))
+    if not known:
+        return True
+    overlap = len(known & set(snapshot["item_model_code_clean"].astype(str)))
+    return overlap >= 0.8 * len(known)
 
 
 class ItemNotScorable(LookupError):
@@ -99,6 +147,9 @@ def predict(item_id: str) -> dict:
 
     events = data_reader.get_events(item_id)
     snapshot = feature_builder.attach_history(snapshot, events)
+    # Kondisi armada butuh riwayat SELURUH model PART, bukan hanya PART ini -
+    # potretnya dibaca sekali per proses lalu dipakai ulang.
+    snapshot = feature_builder.attach_fleet_snapshot(snapshot, _fleet_snapshot(data_end))
     support = feature_builder.part_model_support(
         snapshot, metadata["part_model_support"]
     )

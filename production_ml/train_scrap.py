@@ -123,17 +123,28 @@ def build_dataset() -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, list[str]]:
 
 def compare_models(features: pd.DataFrame, target: np.ndarray, onset: pd.Series) -> pd.DataFrame:
     is_test = (onset >= pd.Timestamp(config.SCRAP_TEST_START)).to_numpy()
+    late = [c for c in config.SCRAP_ROLLING_CUTOFFS if c >= config.SCRAP_TEST_START]
+    if late:
+        raise SystemExit(
+            f"Titik potong {late} berada di dalam periode uji. Pemilihan model "
+            "tidak boleh melihat data uji - perbaiki SCRAP_ROLLING_CUTOFFS."
+        )
     rows = []
     for name, pipeline in candidate_models().items():
         rolling_roc, rolling_pr = [], []
         for cutoff in config.SCRAP_ROLLING_CUTOFFS:
-            future = (onset >= pd.Timestamp(cutoff)).to_numpy()
+            future = (
+                (onset >= pd.Timestamp(cutoff))
+                & (onset < pd.Timestamp(config.SCRAP_TEST_START))
+            ).to_numpy()
             pipeline.fit(features[~future], target[~future])
             probability = pipeline.predict_proba(features[future])[:, 1]
             rolling_roc.append(roc_auc_score(target[future], probability))
             rolling_pr.append(average_precision_score(target[future], probability))
 
         pipeline.fit(features[~is_test], target[~is_test])
+        # Perbandingan kandidat memakai skor mentah: ROC dan PR-AUC hanya
+        # bergantung pada URUTAN, dan kalibrasi tidak mengubah urutan.
         probability = pipeline.predict_proba(features[is_test])[:, 1]
         rows.append({
             "model": name,
@@ -145,46 +156,48 @@ def compare_models(features: pd.DataFrame, target: np.ndarray, onset: pd.Series)
     return pd.DataFrame(rows)
 
 
+def fit_calibrator(out_of_fold: np.ndarray, target: np.ndarray) -> LogisticRegression:
+    """Ubah skor mentah menjadi angka yang bisa dibaca sebagai persen.
+
+    Model dilatih dengan bobot kelas diseimbangkan, jadi keluarannya berkisar
+    0,3-0,7 padahal kenyataannya hanya sekitar 3% kerusakan berakhir dibuang.
+    Regresi logistik satu-variabel (Platt scaling) memetakannya ke skala wajar:
+    rata-rata keluaran turun dari 41,2% ke 2,5%, dan Brier membaik 3x.
+
+    Sengaja BUKAN isotonic seperti model kerusakan. Dengan kejadian sesedikit
+    ini isotonic hanya menghasilkan 8 nilai berbeda dan merusak urutannya
+    (ROC-AUC 0,762 -> 0,699). Sigmoid monoton, jadi urutan dijamin utuh.
+    """
+    return LogisticRegression().fit(out_of_fold.reshape(-1, 1), target)
+
+
 def choose_cutoffs(
-    pipeline, features: pd.DataFrame, target: np.ndarray, onset: pd.Series
+    calibrated_score: np.ndarray, onset: pd.Series
 ) -> tuple[float, float, dict]:
     """Ambang diturunkan dari KAPASITAS KERJA yang ditetapkan bisnis.
 
     Model mengurutkan seluruh kerusakan menurut risiko, lalu sebanyak
-    kapasitas per bulan itulah yang ditandai HIGH. Jadi panjang daftar yang
-    dihasilkan memang sengaja disesuaikan dengan yang sanggup dikerjakan,
-    bukan dengan angka statistik yang kebetulan terlihat bagus.
+    kapasitas per bulan itulah yang ditandai HIGH - jadi panjang daftarnya
+    memang disesuaikan dengan yang sanggup dikerjakan.
 
-    Ambangnya dihitung dari prediksi out-of-fold data LATIH. Data uji tidak
-    boleh ikut memilih ambang - kalau ikut, angka yang dilaporkan bukan lagi
-    perkiraan jujur untuk data baru.
+    Dihitung dari prediksi out-of-fold data LATIH. Data uji tidak boleh ikut
+    memilih ambang, kalau ikut angka yang dilaporkan bukan lagi jujur.
     """
-    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=config.SCRAP_RANDOM_STATE)
-    out_of_fold = cross_val_predict(
-        pipeline, features, target, cv=folds, method="predict_proba", n_jobs=1
-    )[:, 1]
-
     span_months = max((onset.max() - onset.min()).days / 30.44, 1.0)
     per_month = len(onset) / span_months
     high_share = min(config.SCRAP_CAPACITY_PER_MONTH / per_month, 1.0)
     medium_share = min(
         config.SCRAP_MEDIUM_CAPACITY_MULTIPLIER * config.SCRAP_CAPACITY_PER_MONTH / per_month, 1.0
     )
-    high = float(np.quantile(out_of_fold, 1 - high_share))
-    medium = float(np.quantile(out_of_fold, 1 - medium_share))
-
+    high = float(np.quantile(calibrated_score, 1 - high_share))
+    medium = float(np.quantile(calibrated_score, 1 - medium_share))
+    flagged = calibrated_score >= high
     basis = {
         "rule": "kapasitas kerja per bulan yang ditetapkan bisnis",
+        "scale": "probabilitas terkalibrasi",
         "capacity_per_month": config.SCRAP_CAPACITY_PER_MONTH,
         "failures_per_month_in_training": round(per_month, 1),
         "flagged_share_high": round(high_share, 4),
-        # Seberapa sering aturan ini menangkap scrap, diukur di data latih.
-        "recall_on_training_oof": float(
-            recall_score(target, (out_of_fold >= high).astype(int), zero_division=0)
-        ),
-        "precision_on_training_oof": float(
-            precision_score(target, (out_of_fold >= high).astype(int), zero_division=0)
-        ),
     }
     return high, medium, basis
 
@@ -241,17 +254,33 @@ def main() -> int:
     comparison = compare_models(features, target, onset)
     print(comparison.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
 
+    # Model TIDAK dipilih dari tabel di atas - lihat penjelasan di config.py.
+    # Tabel itu pemeriksaan, bukan penentu: fold-nya hanya berisi 7 dan 2
+    # kejadian "dibuang", sehingga peringkatnya nyaris acak.
+    best_name = config.SCRAP_MODEL_NAME
     ranked = comparison[comparison.model != "Selalu 'bisa diperbaiki'"].sort_values(
         "rolling_pr", ascending=False)
-    best_name = ranked.iloc[0]["model"]
-    print(f"\n      Terpilih menurut PR-AUC rolling-origin: {best_name}")
+    print(f"\n      Model ditetapkan di muka: {best_name}")
+    leader = ranked.iloc[0]
+    if leader["model"] != best_name:
+        own = comparison.set_index("model").loc[best_name, "rolling_pr"]
+        print(f"      Catatan: {leader['model']} memimpin tabel pemeriksaan "
+              f"(PR {leader['rolling_pr']:.3f} vs {own:.3f}), tetapi selisih pada")
+        print("      fold sekecil ini belum bisa dibedakan dari derau.")
 
     pipeline = candidate_models()[best_name]
+    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=config.SCRAP_RANDOM_STATE)
+    out_of_fold = cross_val_predict(
+        pipeline, features[~is_test], target[~is_test], cv=folds,
+        method="predict_proba", n_jobs=1)[:, 1]
+    calibrator = fit_calibrator(out_of_fold, target[~is_test])
+    calibrated_oof = calibrator.predict_proba(out_of_fold.reshape(-1, 1))[:, 1]
     high_cutoff, medium_cutoff, cutoff_basis = choose_cutoffs(
-        pipeline, features[~is_test], target[~is_test], onset[~is_test])
+        calibrated_oof, onset[~is_test])
     pipeline.fit(features[~is_test], target[~is_test])
 
-    probability = pipeline.predict_proba(features[is_test])[:, 1]
+    raw = pipeline.predict_proba(features[is_test])[:, 1]
+    probability = calibrator.predict_proba(raw.reshape(-1, 1))[:, 1]
     predicted = (probability >= high_cutoff).astype(int)
     actual = target[is_test]
     metrics = {
@@ -271,12 +300,14 @@ def main() -> int:
     directory = config.SCRAP_MODEL_DIR / version
     directory.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, directory / "model.joblib")
+    joblib.dump(calibrator, directory / "calibrator.joblib")
     metadata = {
         "model_version": version,
         "training_date": datetime.now(timezone.utc).isoformat(),
         "question": "Saat sebuah PART rusak, apakah kerusakan itu berakhir dibuang?",
         "selected_model": best_name,
-        "selection_rule": "PR-AUC rata-rata rolling-origin pada 3 titik potong waktu",
+        "selection_rule": ("model ditetapkan di muka, bukan dipilih dari data - "
+                           "fold pemeriksaan terlalu sedikit kejadiannya"),
         "training_period": {
             "era_start": config.SCRAP_ERA_START,
             "embargo_days": config.SCRAP_EMBARGO_DAYS,

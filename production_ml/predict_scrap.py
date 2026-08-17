@@ -34,14 +34,14 @@ import data_reader
 import predict as failure_model
 import scrap_features
 
-_LOADED: tuple[object, dict] | None = None
+_LOADED: tuple[object, object, dict] | None = None
 
 
 class ItemNotScorable(LookupError):
     """PART tidak dikenal atau riwayatnya belum cukup untuk dinilai."""
 
 
-def _load_model() -> tuple[object, dict]:
+def _load_model() -> tuple[object, object, dict]:
     global _LOADED
     if _LOADED is not None:
         return _LOADED
@@ -54,8 +54,9 @@ def _load_model() -> tuple[object, dict]:
         )
     directory = config.SCRAP_MODEL_DIR / pointer.read_text(encoding="utf-8").strip()
     model = joblib.load(directory / "model.joblib")
+    calibrator = joblib.load(directory / "calibrator.joblib")
     metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
-    _LOADED = (model, metadata)
+    _LOADED = (model, calibrator, metadata)
     return _LOADED
 
 
@@ -73,7 +74,7 @@ def predict_scrap(item_id: str) -> dict:
     Angkanya SELALU bersyarat "kalau rusak" - bukan peluang PART ini rusak.
     Untuk peluang rusaknya, pakai predict() dari predict.py.
     """
-    model, metadata = _load_model()
+    model, calibrator, metadata = _load_model()
 
     data_end = data_reader.get_dataset_max_event_on()
     events = data_reader.get_events(item_id)
@@ -86,16 +87,18 @@ def predict_scrap(item_id: str) -> dict:
         raise ItemNotScorable(f"PART '{item_id}' belum punya riwayat yang bisa dinilai.")
 
     features = scrap_features.build_features(state, metadata["known_item_types"])
-    probability = float(model.predict_proba(features)[:, 1][0])
+    raw = model.predict_proba(features)[:, 1]
+    probability = float(calibrator.predict_proba(raw.reshape(-1, 1))[:, 1][0])
 
     known = state["item_type_clean"].iloc[0] in metadata["known_item_types"]
     return {
         "item_id": state["item_identifier_clean"].iloc[0],
-        # BUKAN probabilitas. Model dilatih dengan bobot kelas diseimbangkan
-        # dan tanpa kalibrasi, jadi angkanya berkisar 0,3-0,7 sementara
-        # kenyataannya hanya 3,3% kerusakan yang berakhir dibuang. Yang bisa
-        # dipercaya adalah URUTANNYA, bukan besarannya.
-        "scrap_score": round(probability, 4),
+        # Sudah dikalibrasi, jadi boleh dibaca sebagai persentase - tetapi
+        # PERKIRAAN, bukan angka pasti. Kalibrator dipasang pada data latih
+        # yang tingkat scrap-nya 2,3%, sementara belakangan naik ke 6,5%,
+        # sehingga angka ini cenderung MERENDAHKAN risiko sesungguhnya.
+        # Urutannya tetap yang paling bisa dipercaya.
+        "scrap_probability": round(probability, 4),
         "scrap_risk_level": _risk_level(probability, metadata["risk_cutoffs"]),
         "scrap_risk_basis": (
             "dibandingkan kerusakan lain yang masuk bengkel, bukan terhadap "
@@ -125,16 +128,16 @@ def predict_death_risk(item_id: str) -> dict:
     scrap = predict_scrap(item_id)
     horizon = config.TARGET_HORIZON_DAYS
     failure_probability = failure[f"failure_probability_{horizon}d"]
-    scrap_score = scrap["scrap_score"]
+    scrap_probability = scrap["scrap_probability"]
 
     return {
         "item_id": scrap["item_id"],
         f"failure_probability_{horizon}d": failure_probability,
-        "scrap_score": scrap_score,
-        # Hasil kali probabilitas dengan skor yang belum dikalibrasi - jadi
-        # ini SKOR PEMERINGKAT, bukan peluang. Kenyataannya hanya sekitar
-        # 0,05% PART yang benar-benar mati dalam 30 hari.
-        f"death_score_{horizon}d": round(failure_probability * scrap_score, 5),
+        "scrap_probability": scrap_probability,
+        # Kedua faktornya kini sama-sama terkalibrasi, jadi hasil kalinya
+        # bisa dibaca sebagai perkiraan peluang - dengan catatan yang sama:
+        # cenderung merendahkan, dan urutannya lebih bisa dipercaya.
+        f"death_probability_{horizon}d": round(failure_probability * scrap_probability, 5),
         "failure_risk_level": failure["risk_level"],
         "scrap_risk_level": scrap["scrap_risk_level"],
         "item_type_known_to_model": scrap["item_type_known_to_model"],

@@ -1,9 +1,9 @@
 {
   "model_version": "v1",
-  "training_date": "2026-08-16T14:42:33.347856+00:00",
+  "training_date": "2026-08-17T05:28:58.007923+00:00",
   "question": "Saat sebuah PART rusak, apakah kerusakan itu berakhir dibuang?",
   "selected_model": "Gabungan LogReg + RF",
-  "selection_rule": "PR-AUC rata-rata rolling-origin pada 3 titik potong waktu",
+  "selection_rule": "model ditetapkan di muka, bukan dipilih dari data - fold pemeriksaan terlalu sedikit kejadiannya",
   "training_period": {
     "era_start": "2025-04-01",
     "embargo_days": 30,
@@ -36,16 +36,15 @@
     "UPS"
   ],
   "risk_cutoffs": {
-    "high": 0.679274185387923,
-    "medium": 0.6325335800191545
+    "high": 0.03469406727905062,
+    "medium": 0.03237358770918705
   },
   "cutoff_basis": {
     "rule": "kapasitas kerja per bulan yang ditetapkan bisnis",
+    "scale": "probabilitas terkalibrasi",
     "capacity_per_month": 3,
     "failures_per_month_in_training": 90.7,
-    "flagged_share_high": 0.0331,
-    "recall_on_training_oof": 0.2,
-    "precision_on_training_oof": 0.1388888888888889
+    "flagged_share_high": 0.0331
   },
   "rows": {
     "total": 1407,
@@ -55,42 +54,42 @@
     {
       "model": "Selalu 'bisa diperbaiki'",
       "rolling_roc": 0.5,
-      "rolling_pr": 0.04879384254050636,
+      "rolling_pr": 0.013196791783951852,
       "test_roc_auc": 0.5,
       "test_pr_auc": 0.06501547987616099
     },
     {
       "model": "Regresi Logistik",
-      "rolling_roc": 0.6500570538644294,
-      "rolling_pr": 0.1524129010322537,
+      "rolling_roc": 0.55448199599143,
+      "rolling_pr": 0.038055863021817675,
       "test_roc_auc": 0.7253232418795332,
       "test_pr_auc": 0.23242464111365901
     },
     {
       "model": "Random Forest",
-      "rolling_roc": 0.6753623205163771,
-      "rolling_pr": 0.12662754307063803,
+      "rolling_roc": 0.8557916925841453,
+      "rolling_pr": 0.07058865720731217,
       "test_roc_auc": 0.794465468306528,
       "test_pr_auc": 0.21222521743844788
     },
     {
       "model": "Extra Trees",
-      "rolling_roc": 0.5986381814828201,
-      "rolling_pr": 0.13979846475402743,
+      "rolling_roc": 0.6229473356831847,
+      "rolling_pr": 0.050495365229108184,
       "test_roc_auc": 0.662251655629139,
       "test_pr_auc": 0.22408532106493825
     },
     {
       "model": "Gradient Boosting",
-      "rolling_roc": 0.7025789292856016,
-      "rolling_pr": 0.11500881188867668,
+      "rolling_roc": 0.8650844045891215,
+      "rolling_pr": 0.07237021550133815,
       "test_roc_auc": 0.7286345001576789,
       "test_pr_auc": 0.1331170431183698
     },
     {
       "model": "Gabungan LogReg + RF",
-      "rolling_roc": 0.6781776894746416,
-      "rolling_pr": 0.1724363539528686,
+      "rolling_roc": 0.7082391664938835,
+      "rolling_pr": 0.04493366769283619,
       "test_roc_auc": 0.7623777988016398,
       "test_pr_auc": 0.2545603159954305
     }

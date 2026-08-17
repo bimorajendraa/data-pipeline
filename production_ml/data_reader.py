@@ -696,6 +696,7 @@ SELECT
     f.item_identifier_clean,
     f.failure_onset_on,
     e.item_type_clean,
+    e.item_model_code_clean,
     {_matches_inventory("pl", "hl", "e.item_model_code_clean")}
         AND e.item_category_clean = 'PART'
         AS is_initial_model_cohort
